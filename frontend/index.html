@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DataLens — Analytics Platform</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- ══════════════ AUTH SCREEN ══════════════ -->
+<div id="authScreen" class="auth-screen">
+  <div class="auth-bg-grid"></div>
+  <div class="auth-card">
+    <div class="auth-logo">
+      <span class="logo-icon"><i class="bi bi-bar-chart-steps"></i></span>
+      <span class="logo-text">DataLens</span>
+    </div>
+    <p class="auth-tagline">Enterprise Analytics Platform</p>
+
+    <!-- Tabs -->
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" onclick="switchTab('login')">Sign In</button>
+      <button class="auth-tab" id="tabRegister" onclick="switchTab('register')">Register</button>
+    </div>
+
+    <!-- Login Form -->
+    <div id="loginForm">
+      <div class="field-group">
+        <label>Email Address</label>
+        <input type="email" id="loginEmail" placeholder="you@company.com" class="field-input"/>
+      </div>
+      <div class="field-group">
+        <label>Password</label>
+        <input type="password" id="loginPassword" placeholder="••••••••" class="field-input"/>
+      </div>
+      <div id="loginError" class="auth-error d-none"></div>
+      <button class="btn-primary-action" onclick="doLogin()">
+        <span>Sign In</span><i class="bi bi-arrow-right"></i>
+      </button>
+    </div>
+
+    <!-- Register Form -->
+    <div id="registerForm" class="d-none">
+      <div class="field-group">
+        <label>Full Name</label>
+        <input type="text" id="regName" placeholder="Your name" class="field-input"/>
+      </div>
+      <div class="field-group">
+        <label>Email Address</label>
+        <input type="email" id="regEmail" placeholder="you@company.com" class="field-input"/>
+      </div>
+      <div class="field-group">
+        <label>Password</label>
+        <input type="password" id="regPassword" placeholder="Min. 6 characters" class="field-input"/>
+      </div>
+      <div id="registerError" class="auth-error d-none"></div>
+      <button class="btn-primary-action" onclick="doRegister()">
+        <span>Create Account</span><i class="bi bi-arrow-right"></i>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ MAIN APP ══════════════ -->
+<div id="appScreen" class="d-none">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-icon-sm"><i class="bi bi-bar-chart-steps"></i></span>
+      <span class="logo-text-sm">DataLens</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <a class="nav-item active" onclick="showPanel('connect')">
+        <i class="bi bi-plug-fill"></i><span>Connect</span>
+      </a>
+      <a class="nav-item" onclick="showPanel('dashboard')" id="navDashboard">
+        <i class="bi bi-grid-3x3-gap-fill"></i><span>Dashboard</span>
+      </a>
+      <a class="nav-item" onclick="showPanel('data')" id="navData">
+        <i class="bi bi-table"></i><span>Data Table</span>
+      </a>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="user-chip">
+        <div class="user-avatar" id="userAvatar">U</div>
+        <div class="user-info">
+          <div class="user-name" id="sidebarUserName">User</div>
+          <div class="user-role" id="sidebarUserRole">analyst</div>
+        </div>
+      </div>
+      <button class="btn-logout" onclick="doLogout()"><i class="bi bi-box-arrow-right"></i></button>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+
+    <!-- Top Bar -->
+    <header class="topbar">
+      <button class="sidebar-toggle" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
+      <div class="topbar-title" id="topbarTitle">Connect to Database</div>
+      <div class="topbar-right">
+        <div class="db-badge d-none" id="dbBadge">
+          <i class="bi bi-server"></i>
+          <span id="dbBadgeText">Not connected</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── CONNECT PANEL ── -->
+    <section class="panel active" id="panelConnect">
+      <div class="panel-header">
+        <h2>Database Connection</h2>
+        <p>Enter your SQL Server credentials to get started</p>
+      </div>
+
+      <div class="connect-grid">
+        <div class="connect-card">
+          <div class="connect-card-header">
+            <i class="bi bi-hdd-network-fill"></i> SQL Server Details
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label-custom">Server / Host</label>
+              <input type="text" id="dbServer" class="form-input-custom" placeholder="localhost or 192.168.1.10"/>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label-custom">Port</label>
+              <input type="number" id="dbPort" class="form-input-custom" placeholder="1433" value="1433"/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-custom">Database Name</label>
+              <input type="text" id="dbName" class="form-input-custom" placeholder="MyDatabase"/>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label-custom">Username</label>
+              <input type="text" id="dbUser" class="form-input-custom" placeholder="sa"/>
+            </div>
+            <div class="col-12">
+              <label class="form-label-custom">Password</label>
+              <input type="password" id="dbPass" class="form-input-custom" placeholder="••••••••"/>
+            </div>
+            <div class="col-12 d-flex gap-4">
+              <label class="toggle-label">
+                <input type="checkbox" id="dbEncrypt"/> Encrypt Connection
+              </label>
+              <label class="toggle-label">
+                <input type="checkbox" id="dbTrustCert" checked/> Trust Server Certificate
+              </label>
+            </div>
+          </div>
+
+          <div id="connectError" class="auth-error d-none mt-3"></div>
+          <div id="connectSuccess" class="auth-success d-none mt-3"></div>
+
+          <button class="btn-primary-action mt-4" onclick="doConnect()" id="btnConnect">
+            <i class="bi bi-lightning-charge-fill"></i><span>Connect & Fetch Tables</span>
+          </button>
+        </div>
+
+        <!-- Table List -->
+        <div class="connect-card" id="tableListCard" style="display:none">
+          <div class="connect-card-header">
+            <i class="bi bi-list-ul"></i> Available Tables
+            <span class="table-count-badge" id="tableCountBadge">0</span>
+          </div>
+          <div class="table-list" id="tableList"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── DASHBOARD PANEL ── -->
+    <section class="panel" id="panelDashboard">
+      <div class="panel-header">
+        <h2>Analytics Dashboard</h2>
+        <p id="dashTableName">Select a table to view analytics</p>
+      </div>
+
+      <div id="dashLoading" class="loading-state d-none">
+        <div class="spinner"></div>
+        <p>Analyzing data...</p>
+      </div>
+
+      <div id="dashContent" class="d-none">
+        <!-- Stats Row -->
+        <div class="stats-row" id="statsRow"></div>
+
+        <!-- Charts Row -->
+        <div class="charts-grid" id="chartsGrid"></div>
+      </div>
+
+      <div id="dashEmpty" class="empty-state">
+        <i class="bi bi-bar-chart-line"></i>
+        <p>No table selected. Go to Connect and click a table.</p>
+      </div>
+    </section>
+
+    <!-- ── DATA TABLE PANEL ── -->
+    <section class="panel" id="panelData">
+      <div class="panel-header">
+        <h2>Data Preview</h2>
+        <p>First 10 rows of selected table</p>
+      </div>
+      <div id="dataTableWrap" class="table-wrap"></div>
+      <div id="dataEmpty" class="empty-state">
+        <i class="bi bi-table"></i>
+        <p>No data loaded yet. Connect and select a table first.</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
