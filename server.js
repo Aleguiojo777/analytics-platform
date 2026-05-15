@@ -23,7 +23,21 @@ app.get('*', (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`\n🚀 Analytics Platform running at http://localhost:${PORT}`);
-  console.log(`   Press Ctrl+C to stop\n`);
-});
+
+function startServer() {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(PORT, () => {
+      console.log(`\n🚀 Analytics Platform running at http://localhost:${PORT}`);
+      console.log(`   Press Ctrl+C to stop\n`);
+      resolve(server);
+    });
+
+    server.on('error', reject);
+  });
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { app, startServer, PORT };
