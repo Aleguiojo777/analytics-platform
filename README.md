@@ -67,6 +67,22 @@ You should see:
 🚀 Analytics Platform running at http://localhost:3000
 ```
 
+### 5b. Run as a Desktop App
+If you want it to behave more like a downloadable desktop app, use Electron:
+```bash
+npm install
+npm run desktop
+```
+This opens the application in a desktop window on your PC or laptop.
+
+### 5c. Build a Downloadable Installer
+To package the app for Windows so others can download and install it, run:
+```bash
+npm install
+npm run dist
+```
+The packaged installer will be created in the `dist/` folder.
+
 ### 6. Open in Browser
 Go to: **http://localhost:3000**
 
