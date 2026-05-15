@@ -3,7 +3,6 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 
-const authRoutes = require('./routes/authRoutes');
 const dbRoutes = require('./routes/dbRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 
@@ -15,7 +14,6 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'frontend')));
 
 // API Routes
-app.use('/api/auth', authRoutes);
 app.use('/api/db', dbRoutes);
 app.use('/api/analytics', analyticsRoutes);
 

@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getTableAnalytics } = require('../controllers/analyticsController');
-const auth = require('../config/authMiddleware');
 
-router.post('/table', auth, getTableAnalytics);
+router.post('/table', getTableAnalytics);
 
 module.exports = router;

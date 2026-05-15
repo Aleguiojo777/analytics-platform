@@ -12,62 +12,8 @@
 </head>
 <body>
 
-<!-- ══════════════ AUTH SCREEN ══════════════ -->
-<div id="authScreen" class="auth-screen">
-  <div class="auth-bg-grid"></div>
-  <div class="auth-card">
-    <div class="auth-logo">
-      <span class="logo-icon"><i class="bi bi-bar-chart-steps"></i></span>
-      <span class="logo-text">DataLens</span>
-    </div>
-    <p class="auth-tagline">Enterprise Analytics Platform</p>
-
-    <!-- Tabs -->
-    <div class="auth-tabs">
-      <button class="auth-tab active" id="tabLogin" onclick="switchTab('login')">Sign In</button>
-      <button class="auth-tab" id="tabRegister" onclick="switchTab('register')">Register</button>
-    </div>
-
-    <!-- Login Form -->
-    <div id="loginForm">
-      <div class="field-group">
-        <label>Email Address</label>
-        <input type="email" id="loginEmail" placeholder="you@company.com" class="field-input"/>
-      </div>
-      <div class="field-group">
-        <label>Password</label>
-        <input type="password" id="loginPassword" placeholder="••••••••" class="field-input"/>
-      </div>
-      <div id="loginError" class="auth-error d-none"></div>
-      <button class="btn-primary-action" onclick="doLogin()">
-        <span>Sign In</span><i class="bi bi-arrow-right"></i>
-      </button>
-    </div>
-
-    <!-- Register Form -->
-    <div id="registerForm" class="d-none">
-      <div class="field-group">
-        <label>Full Name</label>
-        <input type="text" id="regName" placeholder="Your name" class="field-input"/>
-      </div>
-      <div class="field-group">
-        <label>Email Address</label>
-        <input type="email" id="regEmail" placeholder="you@company.com" class="field-input"/>
-      </div>
-      <div class="field-group">
-        <label>Password</label>
-        <input type="password" id="regPassword" placeholder="Min. 6 characters" class="field-input"/>
-      </div>
-      <div id="registerError" class="auth-error d-none"></div>
-      <button class="btn-primary-action" onclick="doRegister()">
-        <span>Create Account</span><i class="bi bi-arrow-right"></i>
-      </button>
-    </div>
-  </div>
-</div>
-
 <!-- ══════════════ MAIN APP ══════════════ -->
-<div id="appScreen" class="d-none">
+<div id="appScreen">
 
   <!-- Sidebar -->
   <aside class="sidebar" id="sidebar">
@@ -90,13 +36,12 @@
 
     <div class="sidebar-bottom">
       <div class="user-chip">
-        <div class="user-avatar" id="userAvatar">U</div>
+        <div class="user-avatar" id="userAvatar">A</div>
         <div class="user-info">
-          <div class="user-name" id="sidebarUserName">User</div>
-          <div class="user-role" id="sidebarUserRole">analyst</div>
+          <div class="user-name" id="sidebarUserName">Administrator</div>
+          <div class="user-role" id="sidebarUserRole">Analyst</div>
         </div>
       </div>
-      <button class="btn-logout" onclick="doLogout()"><i class="bi bi-box-arrow-right"></i></button>
     </div>
   </aside>
 

@@ -3,8 +3,6 @@
    ══════════════════════════════════════ */
 
 // ── State ──────────────────────────────────────────────────────────────
-let token = localStorage.getItem('dl_token') || null;
-let currentUser = JSON.parse(localStorage.getItem('dl_user') || 'null');
 let connInfo = null;          // DB connection details
 let availableTables = [];
 let selectedTable = null;
@@ -13,96 +11,20 @@ let charts = {};              // Chart.js instances
 
 // ── Init ───────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
-  if (token && currentUser) {
-    showApp();
-  } else {
-    showAuth();
-  }
+  showApp();
 });
 
-function showAuth() {
-  document.getElementById('authScreen').classList.remove('d-none');
-  document.getElementById('appScreen').classList.add('d-none');
-}
 function showApp() {
-  document.getElementById('authScreen').classList.add('d-none');
   document.getElementById('appScreen').classList.remove('d-none');
   document.getElementById('appScreen').style.display = 'flex';
   populateUserInfo();
 }
 
 function populateUserInfo() {
-  if (!currentUser) return;
-  const initial = (currentUser.name || 'U')[0].toUpperCase();
+  const initial = 'A';
   document.getElementById('userAvatar').textContent = initial;
-  document.getElementById('sidebarUserName').textContent = currentUser.name || 'User';
-  document.getElementById('sidebarUserRole').textContent = currentUser.role || 'analyst';
-}
-
-// ── Auth Tab Switch ────────────────────────────────────────────────────
-function switchTab(tab) {
-  document.getElementById('loginForm').classList.toggle('d-none', tab !== 'login');
-  document.getElementById('registerForm').classList.toggle('d-none', tab !== 'register');
-  document.getElementById('tabLogin').classList.toggle('active', tab === 'login');
-  document.getElementById('tabRegister').classList.toggle('active', tab === 'register');
-}
-
-// ── Register ───────────────────────────────────────────────────────────
-async function doRegister() {
-  const name     = document.getElementById('regName').value.trim();
-  const email    = document.getElementById('regEmail').value.trim();
-  const password = document.getElementById('regPassword').value;
-  const errEl    = document.getElementById('registerError');
-
-  hideEl(errEl);
-  if (!name || !email || !password) return showError(errEl, 'All fields are required.');
-
-  try {
-    const res = await post('/api/auth/register', { name, email, password });
-    if (res.error) return showError(errEl, res.error);
-    saveSession(res);
-    showApp();
-  } catch (e) {
-    showError(errEl, 'Network error. Is the server running?');
-  }
-}
-
-// ── Login ──────────────────────────────────────────────────────────────
-async function doLogin() {
-  const email    = document.getElementById('loginEmail').value.trim();
-  const password = document.getElementById('loginPassword').value;
-  const errEl    = document.getElementById('loginError');
-
-  hideEl(errEl);
-  if (!email || !password) return showError(errEl, 'Email and password are required.');
-
-  try {
-    const res = await post('/api/auth/login', { email, password });
-    if (res.error) return showError(errEl, res.error);
-    saveSession(res);
-    showApp();
-  } catch (e) {
-    showError(errEl, 'Network error. Is the server running?');
-  }
-}
-
-function saveSession(res) {
-  token = res.token;
-  currentUser = res.user;
-  localStorage.setItem('dl_token', token);
-  localStorage.setItem('dl_user', JSON.stringify(currentUser));
-}
-
-function doLogout() {
-  token = null;
-  currentUser = null;
-  connInfo = null;
-  availableTables = [];
-  selectedTable = null;
-  analyticsData = null;
-  localStorage.removeItem('dl_token');
-  localStorage.removeItem('dl_user');
-  showAuth();
+  document.getElementById('sidebarUserName').textContent = 'Administrator';
+  document.getElementById('sidebarUserRole').textContent = 'Analyst';
 }
 
 // ── Navigation ─────────────────────────────────────────────────────────
@@ -163,7 +85,7 @@ async function doConnect() {
   connInfo = { server, port, database, username, password, encrypt, trustCert };
 
   try {
-    const res = await authPost('/api/db/connect', connInfo);
+    const res = await post('/api/db/connect', connInfo);
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-lightning-charge-fill"></i><span>Connect & Fetch Tables</span>';
 
@@ -230,7 +152,7 @@ async function loadAnalytics(tableName) {
   document.getElementById('dashTableName').textContent = `Table: ${tableName}`;
 
   try {
-    const res = await authPost('/api/analytics/table', { connInfo, tableName });
+    const res = await post('/api/analytics/table', { connInfo, tableName });
     loading.classList.add('d-none');
 
     if (res.error) {
@@ -458,17 +380,6 @@ async function post(url, body) {
   return res.json();
 }
 
-async function authPost(url, body) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    },
-    body: JSON.stringify(body)
-  });
-  return res.json();
-}
 
 function showError(el, msg) { el.textContent = msg; el.classList.remove('d-none'); }
 function showSuccess(el, msg) { el.textContent = msg; el.classList.remove('d-none'); }
