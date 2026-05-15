@@ -630,3 +630,5 @@ body {
   .panel { padding: 18px; }
   .auth-card { width: 92%; padding: 28px 24px; }
 }
+
+/* redeploy-trigger: no-op change to force CI/CD redeploy */
