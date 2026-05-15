@@ -18,7 +18,7 @@ function buildConfig(connInfo) {
   };
 }
 
-// POST /api/analytics/table  — get analytics data for a specific table
+// POST /api/analytics/table  — get analytics data for a specific table.
 async function getTableAnalytics(req, res) {
   const { connInfo, tableName } = req.body;
 
