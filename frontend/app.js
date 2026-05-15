@@ -207,9 +207,9 @@ function renderStats(data) {
   if (data.numericStats.length > 0) {
     const ns = data.numericStats[0];
     [
-      { label: `MIN — ${ns.column}`, value: fmt(ns.min), sub: 'minimum value', icon: 'bi-arrow-down-circle', accent: accentList[1] },
-      { label: `MAX — ${ns.column}`, value: fmt(ns.max), sub: 'maximum value', icon: 'bi-arrow-up-circle', accent: accentList[0] },
-      { label: `AVG — ${ns.column}`, value: fmt(ns.avg), sub: 'average value', icon: 'bi-calculator', accent: accentList[3] }
+      { label: `Smallest Value — ${ns.column}`, value: fmt(ns.min), sub: 'smallest data point', icon: 'bi-arrow-down-circle', accent: accentList[1] },
+      { label: `Largest Value — ${ns.column}`, value: fmt(ns.max), sub: 'largest data point', icon: 'bi-arrow-up-circle', accent: accentList[0] },
+      { label: `Average Value — ${ns.column}`, value: fmt(ns.avg), sub: 'average value', icon: 'bi-calculator', accent: accentList[3] }
     ].forEach(c => {
       const card = document.createElement('div');
       card.className = 'stat-card';
@@ -243,9 +243,9 @@ function renderCharts(data) {
     }
   };
 
-  // 1. Bar chart — numeric stats (min/max/avg)
+  // 1. Bar chart — numeric analytics metrics
   if (data.numericStats.length > 0) {
-    const card = makeChartCard('Numeric Column Stats — Min / Avg / Max');
+    const card = makeChartCard('Numeric Analytics — Smallest / Largest / Average');
     grid.appendChild(card);
     const ctx = card.querySelector('canvas').getContext('2d');
     charts['numStats'] = new Chart(ctx, {
@@ -253,9 +253,9 @@ function renderCharts(data) {
       data: {
         labels: data.numericStats.map(n => n.column),
         datasets: [
-          { label: 'Min', data: data.numericStats.map(n => n.min), backgroundColor: '#4d9fff44', borderColor: '#4d9fff', borderWidth: 1.5 },
-          { label: 'Avg', data: data.numericStats.map(n => n.avg), backgroundColor: '#00e5a044', borderColor: '#00e5a0', borderWidth: 1.5 },
-          { label: 'Max', data: data.numericStats.map(n => n.max), backgroundColor: '#ffd16644', borderColor: '#ffd166', borderWidth: 1.5 }
+          { label: 'Smallest Value', data: data.numericStats.map(n => n.min), backgroundColor: '#4d9fff44', borderColor: '#4d9fff', borderWidth: 1.5 },
+          { label: 'Average Value', data: data.numericStats.map(n => n.avg), backgroundColor: '#00e5a044', borderColor: '#00e5a0', borderWidth: 1.5 },
+          { label: 'Largest Value', data: data.numericStats.map(n => n.max), backgroundColor: '#ffd16644', borderColor: '#ffd166', borderWidth: 1.5 }
         ]
       },
       options: { ...chartDefaults, responsive: true }

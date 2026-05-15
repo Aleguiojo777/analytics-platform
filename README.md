@@ -83,6 +83,11 @@ npm run dist
 ```
 The packaged installer will be created in the `dist/` folder.
 
+### Download DataLens Installer
+After running the build, locate the generated Windows installer in the `dist/` folder. It should be named like `DataLens-1.0.0-x64.exe`.
+
+If you publish a release to GitHub, you can also upload the generated installer under the repository Releases page so users can download it directly.
+
 ### 6. Open in Browser
 Go to: **http://localhost:3000**
 

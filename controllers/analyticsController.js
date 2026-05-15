@@ -73,9 +73,13 @@ async function getTableAnalytics(req, res) {
       ['varchar','nvarchar','char','nchar','text','ntext'].includes(c.DATA_TYPE)
     );
 
+    const looksLikeId = name => /(?:^|_)(?:id|rowid|serial)$|id$/i.test(name);
+    const analysisNumericCols = numericCols.filter(c => !looksLikeId(c.COLUMN_NAME));
+    const numericAnalysisCols = analysisNumericCols.length > 0 ? analysisNumericCols : numericCols;
+
     // Numeric column stats
     let numericStats = [];
-    for (const col of numericCols.slice(0, 6)) {
+    for (const col of numericAnalysisCols.slice(0, 6)) {
       const statsRes = await pool.request().query(`
         SELECT
           MIN([${col.COLUMN_NAME}]) AS min_val,
@@ -114,9 +118,9 @@ async function getTableAnalytics(req, res) {
 
     // Time series for first date column + first numeric column
     let timeSeriesData = null;
-    if (dateCols.length > 0 && numericCols.length > 0) {
+    if (dateCols.length > 0 && numericAnalysisCols.length > 0) {
       const dateCol = dateCols[0].COLUMN_NAME;
-      const numCol = numericCols[0].COLUMN_NAME;
+      const numCol = numericAnalysisCols[0].COLUMN_NAME;
       const tsRes = await pool.request().query(`
         SELECT TOP 30
           CONVERT(VARCHAR(10), [${dateCol}], 120) AS period,
