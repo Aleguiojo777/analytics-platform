@@ -38,8 +38,7 @@
       "!node_modules/**/*.md"
     ],
     "win": {
-      "target": ["nsis"],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "target": ["nsis"]
     },
     "nsis": {
       "oneClick": false,
