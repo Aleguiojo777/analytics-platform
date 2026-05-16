@@ -496,8 +496,7 @@ function renderAIInsights(data) {
       html += `
         <div class="anomaly-item">
           <i class="bi bi-exclamation-circle-fill"></i>
-          <strong>${escHtml(a.column)}</strong>: ${a.count} anomalies detected 
-          (Sample: ${a.sample.toFixed(2)})
+          <strong>${escHtml(a.column)}</strong>: ${a.count} anomalies detected
         </div>
       `;
     });
