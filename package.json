@@ -1,6 +1,6 @@
 {
   "name": "analytics-platform",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Data Analytics Platform with SQL Server support",
   "main": "electron.js",
   "scripts": {
