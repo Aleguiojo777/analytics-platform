@@ -29,6 +29,9 @@
       <a class="nav-item" onclick="showPanel('dashboard')" id="navDashboard">
         <i class="bi bi-grid-3x3-gap-fill"></i><span>Dashboard</span>
       </a>
+      <a class="nav-item" onclick="showPanel('insights')" id="navInsights">
+        <i class="bi bi-lightbulb-fill"></i><span>AI Insights</span>
+      </a>
       <a class="nav-item" onclick="showPanel('data')" id="navData">
         <i class="bi bi-table"></i><span>Data Table</span>
       </a>
@@ -146,6 +149,77 @@
       <div id="dashEmpty" class="empty-state">
         <i class="bi bi-bar-chart-line"></i>
         <p>No table selected. Go to Connect and click a table.</p>
+      </div>
+    </section>
+
+    <!-- ── AI INSIGHTS PANEL ── -->
+    <section class="panel" id="panelInsights">
+      <div class="panel-header">
+        <h2><i class="bi bi-lightbulb-fill"></i> AI-Powered Insights</h2>
+        <p>Executive summary and data intelligence for decision-making</p>
+      </div>
+
+      <div id="insightsLoading" class="loading-state d-none">
+        <div class="spinner"></div>
+        <p>Analyzing data with AI...</p>
+      </div>
+
+      <div id="insightsContent" class="d-none">
+        <!-- Executive Summary -->
+        <div id="summaryCard" class="insight-card d-none">
+          <div class="insight-card-header">
+            <h3><i class="bi bi-briefcase-fill"></i> Executive Summary</h3>
+          </div>
+          <div id="summaryContent" class="insight-card-body"></div>
+        </div>
+
+        <!-- Key Metrics -->
+        <div id="metricsCard" class="insight-card d-none">
+          <div class="insight-card-header">
+            <h3><i class="bi bi-graph-up-arrow"></i> Key Metrics</h3>
+          </div>
+          <div id="metricsContent" class="metrics-grid"></div>
+        </div>
+
+        <!-- Anomalies -->
+        <div id="anomaliesCard" class="insight-card d-none">
+          <div class="insight-card-header">
+            <h3><i class="bi bi-exclamation-triangle-fill"></i> Detected Anomalies</h3>
+          </div>
+          <div id="anomaliesContent"></div>
+        </div>
+
+        <!-- Trends & Forecasts -->
+        <div id="trendsCard" class="insight-card d-none">
+          <div class="insight-card-header">
+            <h3><i class="bi bi-arrow-up-right"></i> Trends & Forecasts</h3>
+          </div>
+          <div id="trendsContent"></div>
+        </div>
+
+        <!-- Column Analysis -->
+        <div id="columnAnalysisCard" class="insight-card d-none">
+          <div class="insight-card-header">
+            <h3><i class="bi bi-columns-gap"></i> Detailed Column Analysis</h3>
+            <select id="columnSelector" class="form-select-sm" aria-label="Select column for analysis" onchange="analyzeSelectedColumn()">
+              <option value="">Select a column to analyze...</option>
+            </select>
+          </div>
+          <div id="columnAnalysisContent"></div>
+        </div>
+
+        <!-- Recommendations -->
+        <div id="recommendationsCard" class="insight-card d-none">
+          <div class="insight-card-header">
+            <h3><i class="bi bi-lightbulb"></i> Recommendations</h3>
+          </div>
+          <div id="recommendationsContent"></div>
+        </div>
+      </div>
+
+      <div id="insightsEmpty" class="empty-state">
+        <i class="bi bi-lightbulb"></i>
+        <p>No table selected. Connect and select a table to see AI insights.</p>
       </div>
     </section>
 

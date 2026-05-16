@@ -32,8 +32,8 @@ function showPanel(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
-  const panelMap = { connect: 'panelConnect', dashboard: 'panelDashboard', data: 'panelData' };
-  const titleMap = { connect: 'Connect to Database', dashboard: 'Analytics Dashboard', data: 'Data Preview' };
+  const panelMap = { connect: 'panelConnect', dashboard: 'panelDashboard', insights: 'panelInsights', data: 'panelData' };
+  const titleMap = { connect: 'Connect to Database', dashboard: 'Analytics Dashboard', insights: 'AI Insights', data: 'Data Preview' };
 
   const panel = document.getElementById(panelMap[name]);
   if (panel) panel.classList.add('active');
@@ -49,6 +49,11 @@ function showPanel(name) {
   // On mobile, collapse sidebar after navigation
   if (window.innerWidth <= 768) {
     document.getElementById('sidebar').classList.remove('mobile-open');
+  }
+
+  // Load AI insights when panel is opened
+  if (name === 'insights' && selectedTable) {
+    loadAIInsights(selectedTable);
   }
 }
 
@@ -398,4 +403,227 @@ function fmt(n) {
   if (Math.abs(n) >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (Math.abs(n) >= 1_000) return (n / 1_000).toFixed(1) + 'K';
   return Number(n).toLocaleString();
+}
+
+// ── AI INSIGHTS ────────────────────────────────────────────────────────
+async function loadAIInsights(tableName) {
+  const loading = document.getElementById('insightsLoading');
+  const content = document.getElementById('insightsContent');
+  const empty = document.getElementById('insightsEmpty');
+
+  content.classList.add('d-none');
+  empty.classList.add('d-none');
+  loading.classList.remove('d-none');
+
+  try {
+    const res = await post('/api/analytics/executive-summary', { connInfo, tableName });
+    loading.classList.add('d-none');
+
+    if (res.error) {
+      empty.classList.remove('d-none');
+      empty.querySelector('p').textContent = res.error;
+      return;
+    }
+
+    if (!res.summary) {
+      empty.classList.remove('d-none');
+      empty.querySelector('p').textContent = 'No numeric data found to analyze.';
+      return;
+    }
+
+    renderAIInsights(res);
+    content.classList.remove('d-none');
+  } catch (e) {
+    console.error('AI Insights Error:', e);
+    loading.classList.add('d-none');
+    empty.classList.remove('d-none');
+    empty.querySelector('p').textContent = 'Failed to generate AI insights.';
+  }
+}
+
+function renderAIInsights(data) {
+  const summary = data.summary;
+
+  // Render Executive Summary
+  if (summary.keyMetrics && summary.keyMetrics.length > 0) {
+    const summaryCard = document.getElementById('summaryCard');
+    const summaryContent = document.getElementById('summaryContent');
+    summaryCard.classList.remove('d-none');
+
+    let html = '<div class="insight-summary">';
+    html += `<p><strong>Top ${summary.keyMetrics.length} Metrics:</strong></p>`;
+    html += '<ul style="margin-left: 16px;">';
+    summary.keyMetrics.forEach(m => {
+      html += `
+        <li><strong>${escHtml(m.column)}</strong>: Avg ${escHtml(m.value)} 
+            (Range: ${escHtml(m.range)}, Variation: ${escHtml(m.variation)})</li>
+      `;
+    });
+    html += '</ul></div>';
+    summaryContent.innerHTML = html;
+  }
+
+  // Render Key Metrics Cards
+  if (summary.keyMetrics && summary.keyMetrics.length > 0) {
+    const metricsCard = document.getElementById('metricsCard');
+    const metricsContent = document.getElementById('metricsContent');
+    metricsCard.classList.remove('d-none');
+
+    metricsContent.innerHTML = '';
+    const colors = ['#00e5a0', '#4d9fff', '#ffd166'];
+    summary.keyMetrics.forEach((m, idx) => {
+      const card = document.createElement('div');
+      card.className = 'metric-item';
+      card.style.borderLeftColor = colors[idx % colors.length];
+      card.innerHTML = `
+        <div class="metric-label">${escHtml(m.column)}</div>
+        <div class="metric-value">${escHtml(m.value)}</div>
+        <div class="metric-detail">Range: ${escHtml(m.range)}</div>
+        <div class="metric-detail">Variation: ${escHtml(m.variation)}</div>
+      `;
+      metricsContent.appendChild(card);
+    });
+  }
+
+  // Render Anomalies
+  if (summary.criticalAnomalies && summary.criticalAnomalies.length > 0) {
+    const anomaliesCard = document.getElementById('anomaliesCard');
+    const anomaliesContent = document.getElementById('anomaliesContent');
+    anomaliesCard.classList.remove('d-none');
+
+    let html = '<div class="anomaly-list">';
+    summary.criticalAnomalies.forEach(a => {
+      html += `
+        <div class="anomaly-item">
+          <i class="bi bi-exclamation-circle-fill"></i>
+          <strong>${escHtml(a.column)}</strong>: ${a.count} anomalies detected 
+          (Sample: ${a.sample.toFixed(2)})
+        </div>
+      `;
+    });
+    html += '</div>';
+    anomaliesContent.innerHTML = html;
+  }
+
+  // Render Trends
+  if (summary.trends && summary.trends.length > 0) {
+    const trendsCard = document.getElementById('trendsCard');
+    const trendsContent = document.getElementById('trendsContent');
+    trendsCard.classList.remove('d-none');
+
+    let html = '<div class="trends-list">';
+    summary.trends.forEach(t => {
+      const icon = t.direction === 'upward' ? '↑' : '↓';
+      const color = t.direction === 'upward' ? '#00e5a0' : '#ff6b6b';
+      html += `
+        <div class="trend-item" style="border-left-color: ${color}">
+          <span style="font-size: 18px; color: ${color}">${icon}</span>
+          <strong>${escHtml(t.column)}</strong>: 
+          <strong style="color: ${color}">${t.direction === 'upward' ? 'Upward' : 'Downward'}</strong> trend 
+          (${t.strength} strength)
+        </div>
+      `;
+    });
+    html += '</div>';
+    trendsContent.innerHTML = html;
+  }
+
+  // Populate column selector for detailed analysis
+  if (data.detailedAnalysis && data.detailedAnalysis.length > 0) {
+    const selector = document.getElementById('columnSelector');
+    data.detailedAnalysis.forEach(col => {
+      const option = document.createElement('option');
+      option.value = col.column;
+      option.textContent = col.column;
+      selector.appendChild(option);
+    });
+
+    // Auto-select first column
+    if (data.detailedAnalysis.length > 0) {
+      selector.value = data.detailedAnalysis[0].column;
+      displayColumnAnalysis(data.detailedAnalysis[0]);
+      document.getElementById('columnAnalysisCard').classList.remove('d-none');
+    }
+  }
+
+  // Render Recommendations
+  if (summary.recommendations && summary.recommendations.length > 0) {
+    const recommendationsCard = document.getElementById('recommendationsCard');
+    const recommendationsContent = document.getElementById('recommendationsContent');
+    recommendationsCard.classList.remove('d-none');
+
+    let html = '<div class="recommendations-list" style="padding: 12px;">';
+    summary.recommendations.forEach(r => {
+      html += `<div style="margin-bottom: 12px; padding: 8px; background: #1a1d2e; border-left: 3px solid #ffd166; border-radius: 4px;">
+        <i class="bi bi-lightbulb" style="color: #ffd166; margin-right: 8px;"></i>
+        ${escHtml(r)}
+      </div>`;
+    });
+    html += '</div>';
+    recommendationsContent.innerHTML = html;
+  }
+
+  // Store detailed analysis for later use
+  window.aiDetailedAnalysis = data.detailedAnalysis;
+}
+
+function displayColumnAnalysis(analysis) {
+  const content = document.getElementById('columnAnalysisContent');
+
+  let html = '<div class="column-analysis">';
+  
+  // Statistics
+  html += '<h4 style="margin-top: 12px; margin-bottom: 8px;">📊 Statistics</h4>';
+  html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">';
+  html += `<div><strong>Count:</strong> ${analysis.stats.count}</div>`;
+  html += `<div><strong>Min:</strong> ${fmt(analysis.stats.min)}</div>`;
+  html += `<div><strong>Max:</strong> ${fmt(analysis.stats.max)}</div>`;
+  html += `<div><strong>Avg:</strong> ${fmt(analysis.stats.avg)}</div>`;
+  html += `<div><strong>Median:</strong> ${fmt(analysis.stats.median)}</div>`;
+  html += `<div><strong>Std Dev:</strong> ${fmt(analysis.stats.stdDev)}</div>`;
+  html += '</div>';
+
+  // Trend Information
+  if (analysis.trend) {
+    html += '<h4 style="margin-top: 16px; margin-bottom: 8px;">📈 Trend Analysis</h4>';
+    html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">';
+    html += `<div><strong>Direction:</strong> ${analysis.trend.trend}</div>`;
+    html += `<div><strong>Slope:</strong> ${analysis.trend.slope}</div>`;
+    html += `<div><strong>Strength:</strong> ${analysis.trend.strength}</div>`;
+    html += `<div><strong>Confidence:</strong> ${analysis.trend.confidence}%</div>`;
+    if (analysis.trend.prediction !== undefined) {
+      html += `<div style="grid-column: 1/-1;"><strong>Forecast (Next Value):</strong> ${fmt(analysis.trend.prediction)}</div>`;
+    }
+    html += '</div>';
+  }
+
+  // Anomalies
+  if (analysis.anomalies && analysis.anomalies.length > 0) {
+    html += `<h4 style="margin-top: 16px; margin-bottom: 8px;">⚠️ Anomalies Detected (${analysis.anomalies.length})</h4>`;
+    html += '<div style="max-height: 200px; overflow-y: auto;">';
+    analysis.anomalies.slice(0, 10).forEach(a => {
+      html += `<div style="padding: 8px; background: #1a1d2e; margin-bottom: 4px; border-radius: 3px;">
+        Value: <strong>${fmt(a.value)}</strong> (Z-Score: ${a.zScore.toFixed(2)})
+      </div>`;
+    });
+    if (analysis.anomalies.length > 10) {
+      html += `<div style="color: #8892a4; font-size: 12px; padding: 8px;">... and ${analysis.anomalies.length - 10} more</div>`;
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  content.innerHTML = html;
+}
+
+function analyzeSelectedColumn() {
+  const selector = document.getElementById('columnSelector');
+  const columnName = selector.value;
+
+  if (!columnName || !window.aiDetailedAnalysis) return;
+
+  const analysis = window.aiDetailedAnalysis.find(a => a.column === columnName);
+  if (analysis) {
+    displayColumnAnalysis(analysis);
+  }
 }
