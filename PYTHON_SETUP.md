@@ -90,8 +90,7 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
 ### Port already in use?
-- Node.js (3000): Check for other Node processes, or change `server.js` port
-- Python (5000): Check for other Python processes, or change `ai_server.py` port
+- Python (3000): Check for other Python processes, or change `PORT` in environment.
 
 ## Files
 
