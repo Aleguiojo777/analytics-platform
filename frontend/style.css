@@ -385,6 +385,66 @@ body {
   margin-bottom: 4px;
 }
 .panel-header p { color: var(--text-muted); font-size: 13px; }
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.btn-secondary-action,
+.btn-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s, background .15s;
+}
+
+.btn-secondary-action {
+  min-height: 34px;
+  padding: 7px 11px;
+}
+
+.btn-icon-action {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+}
+
+.btn-secondary-action:hover,
+.btn-icon-action:hover {
+  background: var(--bg-surface);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.table-search {
+  margin-bottom: 12px;
+}
+
+.action-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 999;
+  background: var(--bg-raised);
+  border: 1px solid var(--accent-glow);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 12px 14px;
+  box-shadow: 0 16px 40px #00000050;
+  font-size: 13px;
+}
 
 /* ── CONNECT ─────────────────────── */
 .connect-grid {

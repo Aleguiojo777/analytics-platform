@@ -1,0 +1,41 @@
+﻿name: Build Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set version
+        id: version
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          if (-not $version -or $version -eq "main") { $version = "manual-${{ github.run_number }}" }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build zip package
+        shell: pwsh
+        run: ./scripts/build_release.ps1 -Version "${{ steps.version.outputs.version }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DataLens-${{ steps.version.outputs.version }}
+          path: release/DataLens-${{ steps.version.outputs.version }}.zip
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/DataLens-${{ steps.version.outputs.version }}.zip
+          generate_release_notes: true

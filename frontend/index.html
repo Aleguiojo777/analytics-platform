@@ -121,6 +121,7 @@
             <i class="bi bi-list-ul"></i> Available Tables
             <span class="table-count-badge" id="tableCountBadge">0</span>
           </div>
+          <input type="search" id="tableSearch" class="form-input-custom table-search" placeholder="Search tables..." oninput="filterTableList()"/>
           <div class="table-list" id="tableList"></div>
         </div>
       </div>
@@ -131,6 +132,10 @@
       <div class="panel-header">
         <h2>Analytics Dashboard</h2>
         <p id="dashTableName">Select a table to view analytics</p>
+        <div class="panel-actions">
+          <button class="btn-secondary-action" onclick="refreshSelectedTable()"><i class="bi bi-arrow-clockwise"></i><span>Refresh</span></button>
+          <button class="btn-secondary-action" onclick="showPanel('insights')"><i class="bi bi-lightbulb"></i><span>Insights</span></button>
+        </div>
       </div>
 
       <div id="dashLoading" class="loading-state d-none">
@@ -169,6 +174,7 @@
         <div id="summaryCard" class="insight-card d-none">
           <div class="insight-card-header">
             <h3><i class="bi bi-briefcase-fill"></i> Executive Summary</h3>
+            <button class="btn-icon-action" onclick="copyInsightsReport()" title="Copy report"><i class="bi bi-clipboard"></i></button>
           </div>
           <div id="summaryContent" class="insight-card-body"></div>
         </div>
@@ -228,6 +234,9 @@
       <div class="panel-header">
         <h2>Data Preview</h2>
         <p>First 10 rows of selected table</p>
+        <div class="panel-actions">
+          <button class="btn-secondary-action" onclick="exportSampleCsv()"><i class="bi bi-download"></i><span>Export CSV</span></button>
+        </div>
       </div>
       <div id="dataTableWrap" class="table-wrap"></div>
       <div id="dataEmpty" class="empty-state">

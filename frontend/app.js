@@ -116,16 +116,18 @@ function renderTableList(tables) {
   const card = document.getElementById('tableListCard');
   const list = document.getElementById('tableList');
   const badge = document.getElementById('tableCountBadge');
+  const search = document.getElementById('tableSearch')?.value.trim().toLowerCase() || '';
+  const filteredTables = tables.filter(t => tableLabel(t).toLowerCase().includes(search));
 
-  badge.textContent = tables.length;
+  badge.textContent = filteredTables.length;
   list.innerHTML = '';
 
-  if (tables.length === 0) {
-    list.innerHTML = '<p style="color:var(--text-muted);font-size:12px;padding:8px">No accessible tables found.</p>';
+  if (filteredTables.length === 0) {
+    list.innerHTML = '<p style="color:var(--text-muted);font-size:12px;padding:8px">No matching tables found.</p>';
   } else {
-    tables.forEach(t => {
+    filteredTables.forEach(t => {
       const item = document.createElement('div');
-      item.className = 'table-item';
+      item.className = tableLabel(t) === tableLabel(selectedTable) ? 'table-item selected' : 'table-item';
       item.innerHTML = `<i class="bi bi-table"></i> ${escHtml(tableLabel(t))}`;
       item.addEventListener('click', () => selectTable(t, item));
       list.appendChild(item);
@@ -133,6 +135,15 @@ function renderTableList(tables) {
   }
 
   card.style.display = 'block';
+}
+
+function filterTableList() {
+  renderTableList(availableTables);
+}
+
+async function refreshSelectedTable() {
+  if (!selectedTable) return;
+  await loadAnalytics(selectedTable);
 }
 
 async function selectTable(tableName, itemEl) {
@@ -405,6 +416,31 @@ function renderDataTable(rows, columns) {
   wrap.innerHTML = html;
 }
 
+function exportSampleCsv() {
+  if (!analyticsData || !analyticsData.sampleRows || analyticsData.sampleRows.length === 0) return;
+
+  const columns = analyticsData.columns.map(c => c.COLUMN_NAME);
+  const csvRows = [columns.map(csvCell).join(',')];
+  analyticsData.sampleRows.forEach(row => {
+    csvRows.push(columns.map(col => csvCell(row[col] ?? '')).join(','));
+  });
+
+  const blob = new Blob([csvRows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const tableName = tableLabel(selectedTable).replace(/[^a-z0-9_-]+/gi, '_') || 'data';
+  a.href = url;
+  a.download = `${tableName}_sample.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvCell(value) {
+  const text = String(value).replace(/"/g, '""');
+  return /[",\r\n]/.test(text) ? `"${text}"` : text;
+}
 // ── Helpers ────────────────────────────────────────────────────────────
 function tableLabel(table) {
   if (!table) return '';
@@ -490,6 +526,53 @@ function resetAIInsightCards() {
 
   const selector = document.getElementById('columnSelector');
   if (selector) selector.innerHTML = '<option value="">Select a column to analyze...</option>';
+}
+async function copyInsightsReport() {
+  const report = buildInsightsReport();
+  if (!report) return;
+
+  try {
+    await navigator.clipboard.writeText(report);
+    flashAction('AI report copied to clipboard.');
+  } catch (e) {
+    console.error('Clipboard copy failed:', e);
+    flashAction('Copy failed. Select the report text manually.');
+  }
+}
+
+function buildInsightsReport() {
+  if (!window.aiDetailedAnalysis || !selectedTable) return '';
+
+  const lines = [
+    `DataLens AI Report`,
+    `Table: ${tableLabel(selectedTable)}`,
+    `Generated: ${new Date().toLocaleString()}`,
+    ''
+  ];
+
+  const summaryText = document.getElementById('summaryContent')?.innerText.trim();
+  const trendsText = document.getElementById('trendsContent')?.innerText.trim();
+  const anomaliesText = document.getElementById('anomaliesContent')?.innerText.trim();
+  const recommendationsText = document.getElementById('recommendationsContent')?.innerText.trim();
+
+  if (summaryText) lines.push('Executive Summary', summaryText, '');
+  if (trendsText) lines.push('Trends', trendsText, '');
+  if (anomaliesText) lines.push('Anomalies', anomaliesText, '');
+  if (recommendationsText) lines.push('Recommendations', recommendationsText, '');
+
+  return lines.join('\n');
+}
+
+function flashAction(message) {
+  const existing = document.getElementById('actionToast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.id = 'actionToast';
+  toast.className = 'action-toast';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2600);
 }
 function renderAIInsights(data) {
   const summary = data.summary;

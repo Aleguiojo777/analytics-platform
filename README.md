@@ -2,6 +2,15 @@
 
 A Flask + Chart.js analytics dashboard for SQL Server. Connect to a database, browse safe tables, preview rows, and generate charts plus statistical insights.
 
+
+## Features
+
+- SQL Server connection screen with schema-aware table discovery.
+- Searchable table list for faster desktop use.
+- Dashboard KPI cards, numeric charts, category distribution, time-series chart, and data completeness score.
+- AI-style statistical insights with anomaly detection, trend analysis, recommendations, and copyable report text.
+- Data preview with CSV export for the current sample rows.
+- Local desktop launcher via `run-datalens.bat` for Windows users.
 ## Project Structure
 
 ```text
@@ -37,6 +46,26 @@ python server.py
 ```
 
 The app runs on `http://localhost:3000` by default.
+
+
+## Desktop Release
+
+This project is intended to be distributed as a local desktop-style ZIP from GitHub Releases.
+
+Build a local release package:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1 -Version v1.0.0
+```
+
+Create a GitHub Release by pushing a version tag:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The release workflow builds `DataLens-v1.0.0.zip` and attaches it to the GitHub Release. Users download the ZIP, extract it, and run `run-datalens.bat`.
 
 ## Configuration
 

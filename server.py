@@ -2,6 +2,10 @@ import os
 
 from flask import Flask, send_from_directory
 from flask_cors import CORS
+try:
+    from waitress import serve
+except ImportError:
+    serve = None
 
 from routes.analytics_routes import bp as analytics_bp
 from routes.db_routes import bp as db_bp
@@ -28,5 +32,9 @@ def index():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 3000))
+    debug = os.getenv('FLASK_DEBUG', '').lower() in ('1', 'true', 'yes')
     print(f'Python Analytics Platform running on http://localhost:{port}')
-    app.run(host='0.0.0.0', port=port, debug=True)
+    if debug or serve is None:
+        app.run(host='127.0.0.1', port=port, debug=debug)
+    else:
+        serve(app, host='127.0.0.1', port=port)
