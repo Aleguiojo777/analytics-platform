@@ -1,4 +1,3 @@
-import re
 from typing import Any, Dict, List
 
 from flask import jsonify, request
@@ -13,15 +12,17 @@ from analytics_insights import (
     std_dev,
 )
 from controllers.db_controller import open_connection, rows_to_dicts
-from utils.table_filter import filter_sensitive_tables, parse_table_reference, quote_identifier
+from utils.table_filter import (
+    DATE_TYPES,
+    NUMERIC_TYPES,
+    TEXT_TYPES,
+    filter_sensitive_tables,
+    is_id_column,
+    parse_table_reference,
+    quote_identifier,
+    table_analytics_profile,
+)
 
-
-NUMERIC_TYPES = {
-    'int', 'bigint', 'smallint', 'tinyint', 'float', 'real',
-    'decimal', 'numeric', 'money', 'smallmoney'
-}
-DATE_TYPES = {'date', 'datetime', 'datetime2', 'smalldatetime', 'datetimeoffset'}
-TEXT_TYPES = {'varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'}
 
 
 def table_exists(cursor, table_ref: Dict[str, str]) -> bool:
@@ -48,6 +49,38 @@ def load_columns(cursor, table_ref: Dict[str, str]) -> List[Dict[str, Any]]:
         for row in cursor.fetchall()
     ]
 
+
+def text_value_sql(column_sql: str, data_type: str) -> str:
+    if str(data_type or '').lower() in ('text', 'ntext'):
+        return f"CAST({column_sql} AS NVARCHAR(4000))"
+    return column_sql
+
+def load_category_profile(cursor, table_sql: str, text_cols: List[Dict[str, Any]], total_rows: int) -> List[Dict[str, Any]]:
+    profiles: List[Dict[str, Any]] = []
+    for col in text_cols[:8]:
+        col_name = col['COLUMN_NAME']
+        col_sql = quote_identifier(col_name)
+        value_sql = text_value_sql(col_sql, col.get('DATA_TYPE'))
+        cursor.execute(
+            f"SELECT COUNT(DISTINCT {value_sql}) AS distinct_count, COUNT({value_sql}) AS filled_count "
+            f"FROM {table_sql} "
+            f"WHERE {value_sql} IS NOT NULL AND LEN({value_sql}) > 0"
+        )
+        row = cursor.fetchone()
+        distinct_count = int(row.distinct_count or 0)
+        filled_count = int(row.filled_count or 0)
+        if distinct_count == 0:
+            continue
+        uniqueness = distinct_count / max(filled_count, 1)
+        score = 100 - min(abs(distinct_count - 8) * 6, 70) - min(uniqueness * 35, 35)
+        profiles.append({
+            'column': col_name,
+            'distinctCount': distinct_count,
+            'filledCount': filled_count,
+            'coveragePercent': round((filled_count / total_rows) * 100, 1) if total_rows else 0,
+            'score': round(score, 2)
+        })
+    return sorted(profiles, key=lambda item: item['score'], reverse=True)
 
 def parse_requested_table(payload: Dict[str, Any]):
     try:
@@ -85,12 +118,13 @@ def get_table_analytics():
             cursor.execute(f"SELECT TOP 100 * FROM {table_sql}")
             sample_rows = rows_to_dicts(cursor, cursor.fetchall())
 
+            profile = table_analytics_profile(table_ref['label'], columns, total_rows)
+            if not profile['usable']:
+                return jsonify({'error': f"Selected table is not analytics-ready: {profile['reason']}."}), 422
+
             numeric_cols = [c for c in columns if c['DATA_TYPE'] in NUMERIC_TYPES]
             date_cols = [c for c in columns if c['DATA_TYPE'] in DATE_TYPES]
             text_cols = [c for c in columns if c['DATA_TYPE'] in TEXT_TYPES]
-
-            def is_id_column(name: str) -> bool:
-                return re.search(r'(?:^|_)(?:id|rowid|serial)$|id$', name, re.IGNORECASE) is not None
 
             numeric_analysis_cols = [col for col in numeric_cols if not is_id_column(col['COLUMN_NAME'])]
             numeric_analysis_cols = numeric_analysis_cols if numeric_analysis_cols else numeric_cols
@@ -129,18 +163,22 @@ def get_table_analytics():
                 })
 
             category_data = None
-            if text_cols:
-                text_col = text_cols[0]['COLUMN_NAME']
+            category_profiles = load_category_profile(cursor, table_sql, text_cols, total_rows)
+            if category_profiles:
+                text_col = category_profiles[0]['column']
+                text_type = next((col['DATA_TYPE'] for col in text_cols if col['COLUMN_NAME'] == text_col), '')
                 text_sql = quote_identifier(text_col)
+                value_sql = text_value_sql(text_sql, text_type)
                 cursor.execute(
-                    f"SELECT TOP 10 {text_sql} AS label, COUNT(*) AS count "
+                    f"SELECT TOP 10 {value_sql} AS label, COUNT(*) AS item_count "
                     f"FROM {table_sql} "
-                    f"WHERE {text_sql} IS NOT NULL AND LEN({text_sql}) > 0 "
-                    f"GROUP BY {text_sql} "
-                    f"ORDER BY count DESC"
+                    f"WHERE {value_sql} IS NOT NULL AND LEN({value_sql}) > 0 "
+                    f"GROUP BY {value_sql} "
+                    f"ORDER BY item_count DESC"
                 )
                 category_data = {
                     'column': text_col,
+                    'profile': category_profiles[0],
                     'data': rows_to_dicts(cursor, cursor.fetchall())
                 }
 
@@ -176,8 +214,10 @@ def get_table_analytics():
                 'numericStats': numeric_stats,
                 'categoryData': category_data,
                 'timeSeriesData': time_series_data,
+                'categoryProfiles': category_profiles,
                 'columnQuality': column_quality,
                 'completenessScore': completeness,
+                'profile': profile,
                 'sampleRows': sample_rows[:10]
             })
     except Exception as error:
@@ -198,18 +238,52 @@ def get_executive_summary():
                 return jsonify({'error': 'Selected table was not found.'}), 404
 
             table_sql = table_ref['quoted']
+            cursor.execute(f"SELECT COUNT(*) AS total FROM {table_sql}")
+            total_rows = cursor.fetchone()[0] or 0
+
             columns = load_columns(cursor, table_ref)
+            profile = table_analytics_profile(table_ref['label'], columns, total_rows)
+            if not profile['usable']:
+                return jsonify({'error': f"Selected table is not analytics-ready: {profile['reason']}."}), 422
             numeric_cols = [c for c in columns if c['DATA_TYPE'] in NUMERIC_TYPES]
+            numeric_cols = [c for c in numeric_cols if not is_id_column(c['COLUMN_NAME'])] or numeric_cols
+            date_cols = [c for c in columns if c['DATA_TYPE'] in DATE_TYPES]
+            text_cols = [c for c in columns if c['DATA_TYPE'] in TEXT_TYPES]
 
             if not numeric_cols:
-                return jsonify({'summary': None, 'message': 'No numeric columns.'})
+                category_profiles = load_category_profile(cursor, table_sql, text_cols, total_rows)
+                summary = {
+                    'keyMetrics': [],
+                    'criticalAnomalies': [],
+                    'trends': [],
+                    'recommendations': [
+                        'This table is best analyzed as categorical data. Review category concentration and completeness instead of numeric trends.',
+                        'Add a measurable numeric field or date field if forecasting, variance, or anomaly detection is required.'
+                    ],
+                    'categoryMetrics': category_profiles[:3],
+                    'dataQualityScore': profile['score']
+                }
+                return jsonify({
+                    'tableName': table_ref['label'],
+                    'tableRef': {'schema': table_ref['schema'], 'name': table_ref['name'], 'label': table_ref['label']},
+                    'columnCount': 0,
+                    'analyzedColumns': 0,
+                    'summary': summary,
+                    'profile': profile,
+                    'detailedAnalysis': []
+                })
 
             analyses: List[Dict[str, Any]] = []
             for col in numeric_cols[:10]:
                 col_sql = quote_identifier(col['COLUMN_NAME'])
+                order_clause = ''
+                if date_cols:
+                    date_sql = quote_identifier(date_cols[0]['COLUMN_NAME'])
+                    order_clause = f" ORDER BY {date_sql}"
                 cursor.execute(
                     f"SELECT TOP 1000 {col_sql} FROM {table_sql} "
                     f"WHERE {col_sql} IS NOT NULL"
+                    f"{order_clause}"
                 )
                 values: List[float] = []
                 for row in cursor.fetchall():
@@ -250,6 +324,7 @@ def get_executive_summary():
                 'columnCount': len(numeric_cols),
                 'analyzedColumns': len(analyses),
                 'summary': summary,
+                'profile': profile,
                 'detailedAnalysis': analyses
             })
     except Exception as error:

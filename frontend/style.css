@@ -541,6 +541,27 @@ body {
 .table-item.selected { background: var(--accent-dim); border-color: var(--accent-glow); color: var(--accent); }
 .table-item i { font-size: 14px; opacity: .7; }
 
+.table-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.table-item-main span,
+.table-item-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-item-main small {
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
 .table-count-badge {
   margin-left: auto;
   background: var(--accent-dim);
@@ -919,3 +940,42 @@ body {
 }
 
 /* redeploy-trigger: no-op change to force CI/CD redeploy */
+
+.anomaly-detail-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 12px;
+  padding: 12px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent3);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.anomaly-action-group {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.anomaly-action-group strong {
+  display: block;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+
+.anomaly-action-group ul {
+  margin: 0 0 0 16px;
+  padding: 0;
+}
+
+.anomaly-action-group li {
+  margin-bottom: 5px;
+}

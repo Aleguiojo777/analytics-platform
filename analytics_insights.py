@@ -143,48 +143,119 @@ def generate_insights(column: str, stats: Dict[str, float], anomalies: List[Dict
 
 
 # Generate Detailed Anomaly Analysis
+def anomaly_action_plan(column: str, anomaly: Dict[str, Any], stats: Dict[str, float], context_avg: float, local_direction: str) -> Dict[str, Any]:
+    severity = anomaly['severity']
+    anomaly_type = anomaly['type']
+    value = anomaly['value']
+    avg = stats.get('avg', 0)
+    std = stats.get('stdDev', 0)
+
+    likely_causes = []
+    validation_checks = []
+    fix_steps = []
+    business_questions = []
+
+    if anomaly_type == 'high':
+        likely_causes.extend([
+            'One-time spike caused by a large transaction, batch upload, promotion, or duplicate entry.',
+            'Unit mismatch such as cents vs pesos, quantity vs amount, or daily value mixed with monthly value.'
+        ])
+        business_questions.extend([
+            f'What event or process produced the unusually high {column} value?',
+            'Are there duplicate rows, repeated imports, or aggregated rows mixed with raw rows?'
+        ])
+    else:
+        likely_causes.extend([
+            'Missing or partial transaction recorded as zero/near-zero instead of null.',
+            'Cancellation, refund, downtime, stock-out, or failed process causing an unusual drop.'
+        ])
+        business_questions.extend([
+            f'Was there an outage, cancellation, refund, or incomplete record when {column} dropped?',
+            'Should this value be excluded, corrected, or kept as a valid business exception?'
+        ])
+
+    if severity == 'critical':
+        validation_checks.extend([
+            'Confirm the source row against the original system or transaction record before using it in reports.',
+            'Check whether the value has the correct decimal placement, currency/unit, and sign.',
+            'Look for duplicate records with the same date, customer, invoice, product, or reference number.'
+        ])
+        fix_steps.extend([
+            'If it is a data entry or import error, correct it in the source system and reload the table.',
+            'If it is legitimate but rare, keep it and add a business note so future reports explain the spike/drop.',
+            'If it is not trustworthy yet, temporarily exclude it from KPI calculations with a documented filter.'
+        ])
+    elif severity == 'high':
+        validation_checks.extend([
+            'Compare the row with nearby records and records in the same category/date group.',
+            'Check whether the value came from a manual edit, late posting, or backfilled batch.'
+        ])
+        fix_steps.extend([
+            'Tag the row for review and decide whether it should be corrected, excluded, or explained.',
+            'Add validation rules for allowed ranges if similar anomalies keep appearing.'
+        ])
+    else:
+        validation_checks.extend([
+            'Review the row context and monitor whether similar values appear again.',
+            'Compare against recent average, median, and expected business range.'
+        ])
+        fix_steps.extend([
+            'Keep the value if it matches a real business event.',
+            'Create an alert threshold if this is an early warning signal.'
+        ])
+
+    if std and abs(context_avg - avg) > std:
+        likely_causes.append('Nearby values are also unusual, so this may be a cluster or period-level issue rather than a single bad row.')
+        validation_checks.append('Inspect the surrounding rows as a group, especially same date range or import batch.')
+    else:
+        likely_causes.append('Nearby values look more normal, so this is more likely an isolated row-level issue.')
+
+    if local_direction != 'flat':
+        business_questions.append(f'Does the surrounding sequence show a real {local_direction} movement or a data loading artifact?')
+
+    return {
+        'likelyCauses': likely_causes,
+        'validationChecks': validation_checks,
+        'fixSteps': fix_steps,
+        'businessQuestions': business_questions,
+        'decisionGuide': [
+            'Correct it if the source value is wrong.',
+            'Keep it if the business event is real and explainable.',
+            'Exclude it only when it is confirmed bad data or would distort a specific KPI.'
+        ],
+        'impact': f"This value is {anomaly['deviationPercent']:.1f}% away from the average of {round(avg, 2)} and falls outside the expected range {anomaly['expectedRange']}."
+    }
+
+
 def analyze_anomalies_detailed(column: str, anomalies: List[Dict], values: List[float], stats: Dict[str, float]) -> List[Dict[str, Any]]:
-    """Generate detailed analysis for each anomaly with recommendations"""
+    """Generate detailed analysis for each anomaly with practical recommendations."""
     detailed_anomalies = []
-    
+
     for anomaly in anomalies:
         idx = anomaly['index']
         val = anomaly['value']
         z_score = anomaly['zScore']
         severity = anomaly['severity']
-        
-        # Generate context: what are surrounding values?
+
         context_start = max(0, idx - 2)
         context_end = min(len(values), idx + 3)
         surrounding_values = values[context_start:context_end]
         context_avg = mean(surrounding_values) if surrounding_values else 0
-        
-        # Determine recommendation based on severity and context
+        before = values[idx - 1] if idx > 0 else None
+        after = values[idx + 1] if idx + 1 < len(values) else None
+        local_direction = 'flat'
+        if before is not None and after is not None:
+            if after > before:
+                local_direction = 'upward'
+            elif after < before:
+                local_direction = 'downward'
+
+        action_plan = anomaly_action_plan(column, anomaly, stats, context_avg, local_direction)
         recommendations = []
-        
-        if severity == 'critical':
-            recommendations.append("🔴 CRITICAL: This value is 4+ standard deviations from mean.")
-            recommendations.append("   → Verify data entry accuracy - likely data entry error or system malfunction")
-            recommendations.append("   → Consider removing if confirmed as bad data")
-            recommendations.append("   → Or investigate the cause if legitimate spike/dip")
-        elif severity == 'high':
-            recommendations.append("🟠 HIGH: This value is 3-4 standard deviations from mean.")
-            if anomaly['type'] == 'high':
-                recommendations.append("   → Investigate what caused this spike")
-            else:
-                recommendations.append("   → Investigate what caused this significant drop")
-            recommendations.append("   → Check surrounding records for related anomalies")
-        else:  # moderate
-            recommendations.append("🟡 MODERATE: This value is 2.5-3 standard deviations from mean.")
-            recommendations.append("   → Review context (dates, external factors)")
-            recommendations.append("   → Monitor trend - may indicate emerging pattern")
-        
-        # Context-based recommendation
-        if abs(context_avg - stats['avg']) > stats['stdDev']:
-            recommendations.append("   ⚠️ Surrounding values are also unusual - potential cluster anomaly")
-        else:
-            recommendations.append("   ℹ️ Surrounding values are normal - isolated anomaly")
-        
+        recommendations.extend(action_plan['validationChecks'][:2])
+        recommendations.extend(action_plan['fixSteps'][:2])
+        recommendations.extend(action_plan['decisionGuide'][:2])
+
         detailed_anomalies.append({
             'rowIndex': idx,
             'actualValue': val,
@@ -194,11 +265,23 @@ def analyze_anomalies_detailed(column: str, anomalies: List[Dict], values: List[
             'severity': severity,
             'type': anomaly['type'],
             'recommendations': recommendations,
-            'surroundingAverage': round(context_avg, 2)
+            'likelyCauses': action_plan['likelyCauses'],
+            'validationChecks': action_plan['validationChecks'],
+            'fixSteps': action_plan['fixSteps'],
+            'businessQuestions': action_plan['businessQuestions'],
+            'decisionGuide': action_plan['decisionGuide'],
+            'impact': action_plan['impact'],
+            'surroundingAverage': round(context_avg, 2),
+            'context': {
+                'windowStartRow': context_start + 1,
+                'windowEndRow': context_end,
+                'previousValue': round(before, 2) if before is not None else None,
+                'nextValue': round(after, 2) if after is not None else None,
+                'localDirection': local_direction
+            }
         })
-    
-    return detailed_anomalies
 
+    return detailed_anomalies
 # Generate Executive Summary
 def generate_executive_summary(numeric_stats: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """Generate executive summary from numeric statistics"""

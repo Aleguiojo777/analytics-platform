@@ -1,15 +1,15 @@
-﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   DataLens â€” Frontend Application Logic
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ══════════════════════════════════════
+   DataLens — Frontend Application Logic
+   ══════════════════════════════════════ */
 
-// â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── State ──────────────────────────────────────────────────────────────
 let connInfo = null;          // DB connection details
 let availableTables = [];
 let selectedTable = null;
 let analyticsData = null;
 let charts = {};              // Chart.js instances
 
-// â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Init ───────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   showApp();
 });
@@ -27,7 +27,7 @@ function populateUserInfo() {
   document.getElementById('sidebarUserRole').textContent = 'Analyst';
 }
 
-// â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Navigation ─────────────────────────────────────────────────────────
 function showPanel(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -68,7 +68,7 @@ function toggleSidebar() {
   }
 }
 
-// â”€â”€ DB Connect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── DB Connect ─────────────────────────────────────────────────────────
 async function doConnect() {
   const server   = document.getElementById('dbServer').value.trim();
   const port     = document.getElementById('dbPort').value.trim();
@@ -100,12 +100,14 @@ async function doConnect() {
     if (res.error) return showError(errEl, res.error);
 
     availableTables = res.tables;
-    showSuccess(sucEl, `Connected to "${res.database}" - ${res.tableCount} table(s) available`);
+    const filtered = Number(res.filteredTableCount || 0);
+    const filteredText = filtered ? ` (${filtered} hidden because they are not analytics-ready)` : '';
+    showSuccess(sucEl, `Connected to "${res.database}" - ${res.tableCount} analytics-ready table(s) available${filteredText}`);
 
     // Show DB badge in topbar
     const badge = document.getElementById('dbBadge');
     badge.classList.remove('d-none');
-    document.getElementById('dbBadgeText').textContent = `${res.database} (${res.tableCount} tables)`;
+    document.getElementById('dbBadgeText').textContent = `${res.database} (${res.tableCount} ready tables)`;
 
     renderTableList(res.tables);
   } catch (e) {
@@ -134,8 +136,19 @@ function renderTableList(tables) {
   } else {
     filteredTables.forEach(t => {
       const item = document.createElement('div');
+      const profile = t.profile || {};
+      const details = [
+        profile.rowCount !== undefined ? `${fmt(profile.rowCount)} rows` : null,
+        profile.suggestedView ? profile.suggestedView.replace('-', ' ') : null
+      ].filter(Boolean).join(' / ');
       item.className = tableLabel(t) === tableLabel(selectedTable) ? 'table-item selected' : 'table-item';
-      item.innerHTML = `<i class="bi bi-table"></i> ${escHtml(tableLabel(t))}`;
+      item.innerHTML = `
+        <i class="bi bi-table"></i>
+        <span class="table-item-main">
+          <span>${escHtml(tableLabel(t))}</span>
+          ${details ? `<small>${escHtml(details)}</small>` : ''}
+        </span>
+      `;
       item.addEventListener('click', () => selectTable(t, item));
       list.appendChild(item);
     });
@@ -163,7 +176,7 @@ async function selectTable(tableName, itemEl) {
   await loadAnalytics(tableName);
 }
 
-// â”€â”€ Analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Analytics ──────────────────────────────────────────────────────────
 async function loadAnalytics(tableName) {
   const loading = document.getElementById('dashLoading');
   const content = document.getElementById('dashContent');
@@ -205,50 +218,56 @@ function renderStats(data) {
   const row = document.getElementById('statsRow');
   row.innerHTML = '';
 
+  const profile = data.profile || {};
   const accentList = ['var(--accent)', 'var(--accent2)', 'var(--accent3)', 'var(--accent4)'];
+  const suggestedView = profile.suggestedView ? profile.suggestedView.replace('-', ' ') : 'quality';
 
   const cards = [
-    { label: 'Total Rows', value: data.totalRows.toLocaleString(), sub: 'records in table', icon: 'bi-database', accent: accentList[0] },
+    { label: 'Total Rows', value: Number(data.totalRows || 0).toLocaleString(), sub: 'records available', icon: 'bi-database', accent: accentList[0] },
     { label: 'Columns', value: data.columns.length, sub: 'fields detected', icon: 'bi-layout-three-columns', accent: accentList[1] },
-    { label: 'Numeric Cols', value: data.numericStats.length, sub: 'measurable fields', icon: 'bi-123', accent: accentList[2] },
-    { label: 'Sample Size', value: data.sampleRows.length, sub: 'rows previewed', icon: 'bi-eye', accent: accentList[3] }
+    { label: 'Readiness', value: `${fmt(profile.score ?? 0)}%`, sub: `${suggestedView} view`, icon: 'bi-stars', accent: accentList[2] },
+    { label: 'Completeness', value: `${fmt(data.completenessScore)}%`, sub: 'measured cells filled', icon: 'bi-check2-circle', accent: accentList[3] }
   ];
+
+  if (profile.numericMeasureCount > 0) {
+    cards.push({ label: 'Measures', value: profile.numericMeasureCount, sub: 'numeric fields', icon: 'bi-123', accent: accentList[0] });
+  }
+  if (profile.textDimensionCount > 0) {
+    cards.push({ label: 'Dimensions', value: profile.textDimensionCount, sub: 'category fields', icon: 'bi-tags', accent: accentList[1] });
+  }
+  if (profile.dateColumnCount > 0) {
+    cards.push({ label: 'Date Fields', value: profile.dateColumnCount, sub: 'time-aware fields', icon: 'bi-calendar3', accent: accentList[3] });
+  }
+
+  if (data.numericStats.length > 0) {
+    const ns = data.numericStats[0];
+    cards.push(
+      { label: `Average - ${ns.column}`, value: fmt(ns.avg), sub: `range ${fmt(ns.min)} to ${fmt(ns.max)}`, icon: 'bi-calculator', accent: accentList[2] },
+      { label: `Total - ${ns.column}`, value: fmt(ns.sum), sub: 'sum of non-null values', icon: 'bi-plus-square', accent: accentList[0] }
+    );
+  } else if (data.categoryData?.profile) {
+    cards.push({
+      label: 'Top Category Field',
+      value: data.categoryData.profile.distinctCount,
+      sub: `${data.categoryData.column} distinct values`,
+      icon: 'bi-pie-chart',
+      accent: accentList[1]
+    });
+  }
 
   cards.forEach(c => {
     const card = document.createElement('div');
     card.className = 'stat-card';
     card.style.setProperty('--card-accent', c.accent);
     card.innerHTML = `
-      <div class="stat-label">${c.label}</div>
-      <div class="stat-value">${c.value}</div>
-      <div class="stat-sub">${c.sub}</div>
+      <div class="stat-label">${escHtml(c.label)}</div>
+      <div class="stat-value">${escHtml(c.value)}</div>
+      <div class="stat-sub">${escHtml(c.sub)}</div>
       <i class="bi ${c.icon} stat-icon"></i>
     `;
     row.appendChild(card);
   });
-
-  // Extra stats from first numeric column
-  if (data.numericStats.length > 0) {
-    const ns = data.numericStats[0];
-    [
-      { label: `Smallest Value â€” ${ns.column}`, value: fmt(ns.min), sub: 'smallest data point', icon: 'bi-arrow-down-circle', accent: accentList[1] },
-      { label: `Largest Value â€” ${ns.column}`, value: fmt(ns.max), sub: 'largest data point', icon: 'bi-arrow-up-circle', accent: accentList[0] },
-      { label: `Average Value â€” ${ns.column}`, value: fmt(ns.avg), sub: 'average value', icon: 'bi-calculator', accent: accentList[3] }
-    ].forEach(c => {
-      const card = document.createElement('div');
-      card.className = 'stat-card';
-      card.style.setProperty('--card-accent', c.accent);
-      card.innerHTML = `
-        <div class="stat-label">${c.label}</div>
-        <div class="stat-value">${c.value}</div>
-        <div class="stat-sub">${c.sub}</div>
-        <i class="bi ${c.icon} stat-icon"></i>
-      `;
-      row.appendChild(card);
-    });
-  }
 }
-
 function renderCharts(data) {
   // Destroy old charts
   Object.values(charts).forEach(c => c.destroy());
@@ -268,9 +287,9 @@ function renderCharts(data) {
     }
   };
 
-  // 1. Bar chart â€” numeric analytics metrics
+  // 1. Bar chart — numeric analytics metrics
   if (data.numericStats.length > 0) {
-    const card = makeChartCard('Numeric Analytics â€” Smallest / Largest / Average');
+    const card = makeChartCard('Numeric Analytics — Smallest / Largest / Average');
     grid.appendChild(card);
     const ctx = card.querySelector('canvas').getContext('2d');
     charts['numStats'] = new Chart(ctx, {
@@ -287,7 +306,7 @@ function renderCharts(data) {
     });
   }
 
-  // 2. Pie chart â€” category distribution
+  // 2. Pie chart — category distribution
   if (data.categoryData && data.categoryData.data.length > 0) {
     const cat = data.categoryData;
     const card = makeChartCard(`Distribution - ${cat.column}`);
@@ -298,7 +317,7 @@ function renderCharts(data) {
       type: 'doughnut',
       data: {
         labels: cat.data.map(d => String(d.label).slice(0, 20)),
-        datasets: [{ data: cat.data.map(d => d.count), backgroundColor: colors, borderColor: '#111318', borderWidth: 2 }]
+        datasets: [{ data: cat.data.map(d => d.count ?? d.item_count), backgroundColor: colors, borderColor: '#111318', borderWidth: 2 }]
       },
       options: {
         responsive: true,
@@ -307,7 +326,7 @@ function renderCharts(data) {
     });
   }
 
-  // 3. Line chart â€” time series
+  // 3. Line chart — time series
   if (data.timeSeriesData && data.timeSeriesData.data.length > 0) {
     const ts = data.timeSeriesData;
     const card = makeChartCard(`${ts.valueColumn} over Time (${ts.dateColumn})`);
@@ -333,7 +352,7 @@ function renderCharts(data) {
     });
   }
 
-  // 4. Horizontal bar â€” sum of numeric columns
+  // 4. Horizontal bar — sum of numeric columns
   if (data.numericStats.length > 1) {
     const card = makeChartCard('Column Totals (Sum)');
     grid.appendChild(card);
@@ -448,7 +467,7 @@ function csvCell(value) {
   const text = String(value).replace(/"/g, '""');
   return /[",\r\n]/.test(text) ? `"${text}"` : text;
 }
-// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Helpers ────────────────────────────────────────────────────────────
 function tableLabel(table) {
   if (!table) return '';
   if (typeof table === 'string') return table;
@@ -488,7 +507,7 @@ function fmt(n) {
   return Number(n).toLocaleString();
 }
 
-// â”€â”€ AI INSIGHTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── AI INSIGHTS ────────────────────────────────────────────────────────
 async function loadAIInsights(tableName) {
   const loading = document.getElementById('insightsLoading');
   const content = document.getElementById('insightsContent');
@@ -604,6 +623,14 @@ function renderAIInsights(data) {
     });
     html += '</ul>';
   }
+  if (summary.categoryMetrics && summary.categoryMetrics.length > 0) {
+    html += '<p><strong>Best Category Fields:</strong></p>';
+    html += '<ul style="margin-left: 16px;">';
+    summary.categoryMetrics.forEach(m => {
+      html += `<li><strong>${escHtml(m.column)}</strong>: ${escHtml(m.distinctCount)} distinct values, ${escHtml(m.coveragePercent)}% filled</li>`;
+    });
+    html += '</ul>';
+  }
   html += '</div>';
   summaryContent.innerHTML = html;
 
@@ -656,7 +683,7 @@ function renderAIInsights(data) {
 
     let html = '<div class="trends-list">';
     summary.trends.forEach(t => {
-      const icon = t.direction === 'upward' ? 'â†‘' : 'â†“';
+      const icon = t.direction === 'upward' ? '↑' : '↓';
       const color = t.direction === 'upward' ? '#00e5a0' : '#ff6b6b';
       html += `
         <div class="trend-item" style="border-left-color: ${color}">
@@ -710,6 +737,16 @@ function renderAIInsights(data) {
   window.aiDetailedAnalysis = data.detailedAnalysis;
 }
 
+
+function renderActionList(title, items) {
+  if (!items || items.length === 0) return '';
+  return `
+    <div class="anomaly-action-group">
+      <strong>${escHtml(title)}</strong>
+      <ul>${items.map(item => `<li>${escHtml(String(item).replace(/^[^A-Za-z0-9]+/, '').trim())}</li>`).join('')}</ul>
+    </div>
+  `;
+}
 function displayColumnAnalysis(analysis) {
   const content = document.getElementById('columnAnalysisContent');
 
@@ -758,14 +795,21 @@ function displayColumnAnalysis(analysis) {
 
   if (analysis.anomaliesDetailed && analysis.anomaliesDetailed.length > 0) {
     const topDetail = analysis.anomaliesDetailed[0];
-    html += '<h4 style="margin-top: 16px; margin-bottom: 8px;">Suggested Follow-Up</h4>';
-    html += '<ul style="margin-left: 16px; color: var(--text-secondary);">';
-    topDetail.recommendations.slice(0, 3).forEach(r => {
-      html += `<li>${escHtml(r.replace(/^[^A-Za-z0-9]+/, '').trim())}</li>`;
-    });
-    html += '</ul>';
-  }
-  html += '</div>';
+    html += '<h4 style="margin-top: 16px; margin-bottom: 8px;">How To Investigate The Main Anomaly</h4>';
+    html += `<div class="anomaly-detail-panel">
+      <div><strong>Severity:</strong> ${escHtml(topDetail.severity)} ${escHtml(topDetail.type)} anomaly</div>
+      <div><strong>Row position:</strong> ${escHtml(Number(topDetail.rowIndex) + 1)}</div>
+      <div><strong>Actual value:</strong> ${fmt(topDetail.actualValue)}</div>
+      <div><strong>Expected range:</strong> ${escHtml(topDetail.expectedRange)}</div>
+      <div><strong>Impact:</strong> ${escHtml(topDetail.impact || topDetail.deviation)}</div>
+      <div><strong>Surrounding average:</strong> ${fmt(topDetail.surroundingAverage)}</div>
+    </div>`;
+    html += renderActionList('Likely causes', topDetail.likelyCauses);
+    html += renderActionList('Validation checks', topDetail.validationChecks);
+    html += renderActionList('Fix steps', topDetail.fixSteps);
+    html += renderActionList('Business questions', topDetail.businessQuestions);
+    html += renderActionList('Decision guide', topDetail.decisionGuide);
+  }  html += '</div>';
   content.innerHTML = html;
 }
 

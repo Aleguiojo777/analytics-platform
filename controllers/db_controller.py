@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 import pyodbc
 from flask import jsonify, request
 
-from utils.table_filter import filter_sensitive_tables, normalize_boolean, table_label
+from utils.table_filter import filter_sensitive_tables, normalize_boolean, table_analytics_profile, table_label
 
 
 MAX_FIELD_LENGTH = 256
@@ -123,26 +123,61 @@ def connect():
         with open_connection(conn_info) as connection:
             cursor = connection.cursor()
             cursor.execute(
-                "SELECT TABLE_SCHEMA, TABLE_NAME "
-                "FROM INFORMATION_SCHEMA.TABLES "
-                "WHERE TABLE_TYPE = 'BASE TABLE' "
-                "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+                "SELECT "
+                "s.name AS TABLE_SCHEMA, "
+                "t.name AS TABLE_NAME, "
+                "COALESCE(SUM(CASE WHEN p.index_id IN (0, 1) THEN p.rows ELSE 0 END), 0) AS ROW_COUNT "
+                "FROM sys.tables t "
+                "JOIN sys.schemas s ON s.schema_id = t.schema_id "
+                "LEFT JOIN sys.partitions p ON p.object_id = t.object_id "
+                "WHERE t.is_ms_shipped = 0 "
+                "GROUP BY s.name, t.name "
+                "ORDER BY s.name, t.name"
             )
             tables = [
                 {
                     'schema': row.TABLE_SCHEMA,
                     'name': row.TABLE_NAME,
-                    'label': table_label(row.TABLE_SCHEMA, row.TABLE_NAME)
+                    'label': table_label(row.TABLE_SCHEMA, row.TABLE_NAME),
+                    'rowCount': int(row.ROW_COUNT or 0)
                 }
                 for row in cursor.fetchall()
             ]
             safe_labels = set(filter_sensitive_tables([table['label'] for table in tables]))
             safe_tables = [table for table in tables if table['label'] in safe_labels]
+
+            cursor.execute(
+                "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE "
+                "FROM INFORMATION_SCHEMA.COLUMNS "
+                "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
+            )
+            columns_by_table: Dict[str, List[Dict[str, Any]]] = {}
+            for row in cursor.fetchall():
+                label = table_label(row.TABLE_SCHEMA, row.TABLE_NAME)
+                columns_by_table.setdefault(label, []).append({
+                    'COLUMN_NAME': row.COLUMN_NAME,
+                    'DATA_TYPE': row.DATA_TYPE
+                })
+
+            analytics_tables = []
+            for table in safe_tables:
+                profile = table_analytics_profile(
+                    table['label'],
+                    columns_by_table.get(table['label'], []),
+                    table['rowCount']
+                )
+                if profile['usable']:
+                    analytics_tables.append({
+                        **table,
+                        'profile': profile
+                    })
+
             return jsonify({
                 'message': f'Connected to "{database}" successfully.',
                 'database': clean_text_field(database, 'database'),
-                'tables': safe_tables,
-                'tableCount': len(safe_tables)
+                'tables': analytics_tables,
+                'tableCount': len(analytics_tables),
+                'filteredTableCount': max(len(tables) - len(analytics_tables), 0)
             })
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
