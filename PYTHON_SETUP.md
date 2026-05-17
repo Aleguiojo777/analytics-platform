@@ -1,6 +1,6 @@
 # Python AI Server Integration
 
-The Analytics Platform now integrates Python for AI-powered insights. This document explains how to set up and run both servers.
+The Analytics Platform now integrates Python for AI-powered insights. This document explains how to set up and run the server.
 
 ## Architecture
 
@@ -47,7 +47,6 @@ python -m venv venv
 ### 3. Install Dependencies
 
 ```powershell
-# Make sure venv is activated
 pip install -r requirements.txt
 ```
 
@@ -77,9 +76,8 @@ Open your browser and go to: **http://localhost:3000**
 ## Troubleshooting
 
 ### Python API not responding?
-- Check if Python server is running on port 5000
+- Check if Python server is running on port 3000
 - Check for error messages in Python terminal
-- Falls back to basic stats if Python unavailable
 
 ### Can't activate virtual environment?
 ```powershell

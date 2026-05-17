@@ -4,12 +4,10 @@ A full-stack analytics dashboard for SQL Server. Connect to any SQL Server datab
 
 ---
 
-## 🗂 Folder Structure
+## 📂 Folder Structure
 
 ```
 analytics-platform/
-├── config/
-│   └── authMiddleware.js     ← Checks JWT token on protected routes
 ├── controllers/
 │   ├── db_controller.py      ← SQL Server connection and table listing logic
 │   └── analytics_controller.py ← Python analytics/summary endpoint logic
@@ -18,15 +16,12 @@ analytics-platform/
 │   ├── style.css             ← All styles
 │   └── app.js                ← All frontend JavaScript
 ├── routes/
-│   ├── authRoutes.js         ← /api/auth/* endpoints
-│   ├── dbRoutes.js           ← /api/db/* endpoints
-│   └── analyticsRoutes.js    ← /api/analytics/* endpoints
+│   ├── db_routes.py          ← /api/db/* endpoints
+│   └── analytics_routes.py   ← /api/analytics/* endpoints
 ├── utils/
-│   ├── userStore.js          ← In-memory user storage
-│   ├── jwtUtils.js           ← JWT sign/verify helpers
-│   └── tableFilter.js        ← Hides sensitive tables
+│   └── table_filter.py       ← Hides sensitive tables
 ├── .env                      ← Environment config (DO NOT commit this)
-├── package.json
+├── requirements.txt          ← Python dependencies
 └── server.py                 ← Python Flask app entry point
 ```
 
@@ -34,8 +29,8 @@ analytics-platform/
 
 ## ⚡ Setup (Step-by-Step for Beginners)
 
-### 1. Install Node.js
-Download and install from: https://nodejs.org (choose LTS version)
+### 1. Install Python
+Download and install Python 3.9+ from: https://www.python.org/downloads/
 
 ### 2. Open a Terminal / Command Prompt
 Navigate to the project folder:
@@ -43,67 +38,25 @@ Navigate to the project folder:
 cd path/to/analytics-platform
 ```
 
-### 3. Install Dependencies
+### 3. Create and Activate Virtual Environment
 ```bash
-npm install
+python -m venv venv
+source venv/bin/activate  # On Windows: .\venv\Scripts\Activate.ps1
 ```
-This downloads all required packages listed in `package.json`.
 
-### 4. Configure Environment
-Open the `.env` file and change `JWT_SECRET` to any long random string:
+### 4. Install Dependencies
+```bash
+pip install -r requirements.txt
 ```
-JWT_SECRET=MySuper$ecretKey12345!ChangeMeNow
-PORT=3000
-```
-You do NOT need to fill in the DB_ variables — users enter connection details in the UI.
 
 ### 5. Start the Server
 ```bash
-npm start
+python server.py
 ```
 You should see:
 ```
-� Analytics Platform running at http://localhost:3000
+ * Running on http://localhost:3000
 ```
-
-### 5b. Run as a Desktop App
-If you want it to behave more like a downloadable desktop app, use Electron:
-```bash
-npm install
-npm run desktop
-```
-This opens the application in a desktop window on your PC or laptop.
-
-### 5c. Build a Downloadable Installer
-To package the app for Windows so others can download and install it, run:
-```bash
-npm install
-npm run dist
-```
-The packaged installer will be created in the `dist/` folder.
-
-### Download DataLens Installer
-After running the build, locate the generated Windows installer in the `dist/` folder. It should be named like `DataLens-1.0.0-x64.exe`.
-
-If you publish a release to GitHub, you can also upload the generated installer under the repository Releases page so users can download it directly.
-
-### 6. Open in Browser
-Go to: **http://localhost:3000**
-
----
-
-## 🔐 How to Use
-
-1. **Register** a new account on the Sign In page
-2. Click **Connect**, enter your SQL Server details:
-   - Server: your SQL Server hostname or IP (e.g. `localhost`, `192.168.1.10`)
-   - Port: usually `1433`
-   - Database: name of the database to explore
-   - Username / Password: your SQL Server credentials
-   - Check **Trust Server Certificate** if using a local/dev server
-3. Click **Connect & Fetch Tables**
-4. Click any table name to **generate its dashboard**
-5. Switch to **Data Table** to preview raw rows
 
 ---
 
@@ -111,20 +64,20 @@ Go to: **http://localhost:3000**
 
 | Feature | How it works |
 |---|---|
-| Password hashing | `bcryptjs` with 12 salt rounds |
+| Password hashing | `bcrypt` with 12 salt rounds |
 | Authentication | JWT tokens (8-hour expiry) |
 | Sensitive table hiding | Tables with names containing `user`, `password`, `auth`, `token`, etc. are automatically hidden |
 | Input validation | Table names are checked before any SQL query |
-| Parameterized queries | All user inputs use `mssql` parameterized queries |
+| Parameterized queries | All user inputs use parameterized queries |
 
 ---
 
-## 🚀 Development Mode (Auto-Restart)
+## 🚀 Development Mode
 
 ```bash
-npm run dev
+python server.py
 ```
-Uses `nodemon` to restart the server automatically when you save changes.
+The server will restart automatically when you save changes if you use tools like `watchdog`.
 
 ---
 
@@ -134,8 +87,8 @@ Uses `nodemon` to restart the server automatically when you save changes.
 |---|---|
 | Frontend | HTML, CSS, Bootstrap 5, Chart.js 4 |
 | Backend | Python, Flask |
-| Database | SQL Server (via `mssql` package) |
-| Auth | bcryptjs + JWT |
+| Database | SQL Server |
+| Auth | bcrypt + JWT |
 | Fonts | Syne + DM Mono (Google Fonts) |
 
 ---
@@ -147,5 +100,3 @@ Uses `nodemon` to restart the server automatically when you save changes.
 **"No tables found"** — Your user may not have SELECT permission on any tables, or all tables have sensitive names.
 
 **Port already in use** — Change `PORT=3001` in `.env`.
-
-**npm not found** — Node.js is not installed or not in your PATH. Reinstall from nodejs.org.
