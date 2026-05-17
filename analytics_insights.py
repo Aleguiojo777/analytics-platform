@@ -143,89 +143,193 @@ def generate_insights(column: str, stats: Dict[str, float], anomalies: List[Dict
 
 
 # Generate Detailed Anomaly Analysis
+
+def infer_metric_context(column: str) -> Dict[str, Any]:
+    name = str(column or '').lower()
+    contexts = [
+        {
+            'keywords': ['sales', 'revenue', 'amount', 'price', 'total', 'income', 'payment', 'cost', 'expense', 'profit'],
+            'label': 'financial metric',
+            'high_causes': [
+                'Large order, bulk payment, price change, duplicate invoice, or aggregated total mixed into transaction-level data.',
+                'Currency, tax, discount, or decimal-place issue causing the amount to be overstated.'
+            ],
+            'low_causes': [
+                'Refund, discount, cancellation, missing payment line, or partial transaction posted as a low amount.',
+                'Zero-value or test transaction included in the reporting table.'
+            ],
+            'checks': [
+                'Compare invoice/order/payment reference numbers for duplicates or reversals.',
+                'Verify currency, tax, discount, and decimal precision against the source transaction.'
+            ],
+            'fixes': [
+                'Correct duplicate or mis-scaled financial records in the source system, then reload analytics.',
+                'Separate refunds/cancellations from gross sales if the KPI should show normal revenue only.'
+            ]
+        },
+        {
+            'keywords': ['qty', 'quantity', 'count', 'units', 'stock', 'inventory', 'order_count'],
+            'label': 'volume or inventory metric',
+            'high_causes': [
+                'Bulk order, batch posting, duplicate scan, stock adjustment, or unit-of-measure mismatch.',
+                'Aggregated quantity mixed with line-item quantity.'
+            ],
+            'low_causes': [
+                'Stock-out, cancelled item, missing quantity, failed scan, or quantity stored as zero instead of null.',
+                'Returns or inventory corrections reducing the recorded quantity.'
+            ],
+            'checks': [
+                'Check unit of measure, package size, and whether the row is line-level or summary-level.',
+                'Compare the row with inventory movements, returns, or fulfilment records.'
+            ],
+            'fixes': [
+                'Normalize quantities to one unit of measure before charting or forecasting.',
+                'Flag stock adjustments and returns separately from normal order quantity.'
+            ]
+        },
+        {
+            'keywords': ['duration', 'time', 'latency', 'minutes', 'hours', 'days', 'delay'],
+            'label': 'time or duration metric',
+            'high_causes': [
+                'Process delay, outage, waiting time, long-running job, or start/end timestamp mismatch.',
+                'Duration calculated across wrong timezone, date boundary, or business calendar.'
+            ],
+            'low_causes': [
+                'Missing end time, default zero duration, skipped workflow step, or immediate auto-completion.',
+                'Incorrect timestamp order or rounded duration.'
+            ],
+            'checks': [
+                'Validate start/end timestamps, timezone, and whether weekends or non-business hours should be excluded.',
+                'Check logs around the same period for outages or stalled processing.'
+            ],
+            'fixes': [
+                'Recalculate duration from trusted timestamps and consistent timezone rules.',
+                'Treat missing or default durations separately from genuine fast completions.'
+            ]
+        },
+        {
+            'keywords': ['score', 'rating', 'percent', 'percentage', 'rate', 'ratio'],
+            'label': 'score or rate metric',
+            'high_causes': [
+                'Small denominator, changed scoring rule, duplicate positive events, or values stored as 0-100 mixed with 0-1.',
+                'Exceptional performance period or category concentration.'
+            ],
+            'low_causes': [
+                'Small denominator, missing numerator events, changed scoring rule, or values stored in the wrong scale.',
+                'Real performance drop that needs segmentation by product, team, branch, or period.'
+            ],
+            'checks': [
+                'Confirm whether the metric is stored as fraction or percentage and whether denominator is large enough.',
+                'Recalculate numerator and denominator from source rows.'
+            ],
+            'fixes': [
+                'Standardize the scale before reporting, for example all rates as 0-100 or all as 0-1.',
+                'Suppress or label rates based on very small denominators.'
+            ]
+        }
+    ]
+
+    for context in contexts:
+        if any(keyword in name for keyword in context['keywords']):
+            return context
+
+    return {
+        'label': 'numeric metric',
+        'high_causes': [
+            'One-time spike, duplicate record, batch import, aggregation mismatch, or valid exceptional event.',
+            'Unit or scale mismatch compared with nearby values.'
+        ],
+        'low_causes': [
+            'Missing value represented as zero, incomplete row, cancellation, or valid exceptional drop.',
+            'Partial import or source-system issue affecting this metric.'
+        ],
+        'checks': [
+            'Compare the row with source data and nearby rows in the same period or category.',
+            'Check for duplicate records, null handling, unit changes, and import batch issues.'
+        ],
+        'fixes': [
+            'Correct source data if the value is wrong, then reload the analytics table.',
+            'If valid, keep the value and document the business reason in the report.'
+        ]
+    }
 def anomaly_action_plan(column: str, anomaly: Dict[str, Any], stats: Dict[str, float], context_avg: float, local_direction: str) -> Dict[str, Any]:
     severity = anomaly['severity']
     anomaly_type = anomaly['type']
-    value = anomaly['value']
     avg = stats.get('avg', 0)
     std = stats.get('stdDev', 0)
+    metric_context = infer_metric_context(column)
 
     likely_causes = []
     validation_checks = []
     fix_steps = []
     business_questions = []
 
+    likely_causes.extend(metric_context['high_causes'] if anomaly_type == 'high' else metric_context['low_causes'])
+    validation_checks.extend(metric_context['checks'])
+    fix_steps.extend(metric_context['fixes'])
+
     if anomaly_type == 'high':
-        likely_causes.extend([
-            'One-time spike caused by a large transaction, batch upload, promotion, or duplicate entry.',
-            'Unit mismatch such as cents vs pesos, quantity vs amount, or daily value mixed with monthly value.'
-        ])
         business_questions.extend([
-            f'What event or process produced the unusually high {column} value?',
-            'Are there duplicate rows, repeated imports, or aggregated rows mixed with raw rows?'
+            f'What event, product, customer, branch, or batch produced the unusually high {column} value?',
+            f'Is this high {metric_context["label"]} expected for a known campaign, season, bulk transaction, or operational event?'
         ])
     else:
-        likely_causes.extend([
-            'Missing or partial transaction recorded as zero/near-zero instead of null.',
-            'Cancellation, refund, downtime, stock-out, or failed process causing an unusual drop.'
-        ])
         business_questions.extend([
-            f'Was there an outage, cancellation, refund, or incomplete record when {column} dropped?',
-            'Should this value be excluded, corrected, or kept as a valid business exception?'
+            f'What event, process, or missing input caused {column} to drop below its normal range?',
+            f'Should this low {metric_context["label"]} be treated as a valid business exception, missing data, or an error?'
         ])
 
     if severity == 'critical':
         validation_checks.extend([
-            'Confirm the source row against the original system or transaction record before using it in reports.',
-            'Check whether the value has the correct decimal placement, currency/unit, and sign.',
-            'Look for duplicate records with the same date, customer, invoice, product, or reference number.'
+            'Confirm the source row before using it in management reports or automated decisions.',
+            'Check decimal placement, sign, unit, and whether this row is a raw record or an already aggregated total.'
         ])
         fix_steps.extend([
-            'If it is a data entry or import error, correct it in the source system and reload the table.',
-            'If it is legitimate but rare, keep it and add a business note so future reports explain the spike/drop.',
-            'If it is not trustworthy yet, temporarily exclude it from KPI calculations with a documented filter.'
+            'Correct the value in the source system if it is wrong, then refresh the analytics table.',
+            'If it is real, annotate the report with the reason so the anomaly is not mistaken for bad data.',
+            'If still unverified, exclude it from KPI calculations temporarily with a documented filter.'
         ])
     elif severity == 'high':
         validation_checks.extend([
-            'Compare the row with nearby records and records in the same category/date group.',
-            'Check whether the value came from a manual edit, late posting, or backfilled batch.'
+            'Compare this row with the same metric in nearby dates, categories, branches, or products.',
+            'Check whether the value came from a late posting, manual edit, or backfilled batch.'
         ])
         fix_steps.extend([
-            'Tag the row for review and decide whether it should be corrected, excluded, or explained.',
-            'Add validation rules for allowed ranges if similar anomalies keep appearing.'
+            'Tag this row for review and decide whether it should be corrected, excluded, or explained.',
+            'Add validation thresholds for this metric if similar anomalies repeat.'
         ])
     else:
         validation_checks.extend([
-            'Review the row context and monitor whether similar values appear again.',
-            'Compare against recent average, median, and expected business range.'
+            'Review context before changing the data because this may be an early but valid signal.',
+            'Compare against median and recent values, not only the average.'
         ])
         fix_steps.extend([
             'Keep the value if it matches a real business event.',
-            'Create an alert threshold if this is an early warning signal.'
+            'Create a monitoring rule if this pattern continues.'
         ])
 
     if std and abs(context_avg - avg) > std:
-        likely_causes.append('Nearby values are also unusual, so this may be a cluster or period-level issue rather than a single bad row.')
-        validation_checks.append('Inspect the surrounding rows as a group, especially same date range or import batch.')
+        likely_causes.append('Nearby values are also unusual, so this may be a period-level, category-level, or import-batch issue.')
+        validation_checks.append('Inspect the surrounding row window as a group instead of reviewing only the single value.')
     else:
         likely_causes.append('Nearby values look more normal, so this is more likely an isolated row-level issue.')
 
     if local_direction != 'flat':
-        business_questions.append(f'Does the surrounding sequence show a real {local_direction} movement or a data loading artifact?')
+        business_questions.append(f'Does the surrounding sequence show a real {local_direction} movement, or did the data loading/order create a false trend?')
 
     return {
+        'metricContext': metric_context['label'],
         'likelyCauses': likely_causes,
         'validationChecks': validation_checks,
         'fixSteps': fix_steps,
         'businessQuestions': business_questions,
         'decisionGuide': [
-            'Correct it if the source value is wrong.',
-            'Keep it if the business event is real and explainable.',
-            'Exclude it only when it is confirmed bad data or would distort a specific KPI.'
+            'Correct it when source data, scale, sign, duplicate status, or calculation is wrong.',
+            'Keep it when it matches a real business event and explain it in the analysis.',
+            'Exclude it only for the specific KPI/report where confirmed bad data would distort the result.'
         ],
-        'impact': f"This value is {anomaly['deviationPercent']:.1f}% away from the average of {round(avg, 2)} and falls outside the expected range {anomaly['expectedRange']}."
+        'impact': f"This {metric_context['label']} is {anomaly['deviationPercent']:.1f}% away from the average of {round(avg, 2)} and falls outside the expected range {anomaly['expectedRange']}."
     }
-
 
 def analyze_anomalies_detailed(column: str, anomalies: List[Dict], values: List[float], stats: Dict[str, float]) -> List[Dict[str, Any]]:
     """Generate detailed analysis for each anomaly with practical recommendations."""
@@ -265,6 +369,7 @@ def analyze_anomalies_detailed(column: str, anomalies: List[Dict], values: List[
             'severity': severity,
             'type': anomaly['type'],
             'recommendations': recommendations,
+            'metricContext': action_plan['metricContext'],
             'likelyCauses': action_plan['likelyCauses'],
             'validationChecks': action_plan['validationChecks'],
             'fixSteps': action_plan['fixSteps'],
@@ -346,23 +451,31 @@ def generate_executive_summary(numeric_stats: List[Dict[str, Any]]) -> Optional[
             })
     
     # Recommendations
+    total_values = sum(s['stats'].get('count', 0) for s in numeric_stats) if numeric_stats else 0
+    anomaly_rate = (total_anomalies / total_values) * 100 if total_values else 0
+
     if critical_count > 0:
-        summary['recommendations'].append(f'🔴 CRITICAL: {critical_count} critical anomalies detected. Immediate investigation required.')
-    
-    if total_anomalies > 0 and total_anomalies > len(numeric_stats) * 0.1:
-        summary['recommendations'].append(f'⚠️ High anomaly rate ({(total_anomalies / (len(numeric_stats) * 10)):.1f}% of records). Consider data validation review.')
-    
+        summary['recommendations'].append(f'Critical: {critical_count} critical anomalies detected. Verify source rows before using these values in reports.')
+
+    if total_anomalies > 0:
+        summary['recommendations'].append(f'Anomaly rate: {anomaly_rate:.1f}% of analyzed numeric values ({total_anomalies} of {total_values}). Review the detailed anomaly checks below.')
+
+    if anomaly_rate >= 5:
+        summary['recommendations'].append('High anomaly rate: check import batches, duplicate records, unit mismatches, and missing validation rules.')
+    elif total_anomalies > 0:
+        summary['recommendations'].append('Focused review: start with the highest-severity anomaly and confirm whether it is a valid business event or bad data.')
+
     if not summary['criticalAnomalies']:
-        summary['recommendations'].append('✓ No critical anomalies detected. Data appears clean.')
-    
+        summary['recommendations'].append('No critical anomalies detected. Continue monitoring moderate or high outliers during regular data review.')
+
     if any(t['direction'] == 'downward' for t in summary['trends']):
-        summary['recommendations'].append('📉 Review declining metrics - investigate root causes.')
-    
+        summary['recommendations'].append('Declining metrics: compare the affected period with operational events, refunds, outages, or missing records.')
+
     if any(t['direction'] == 'upward' for t in summary['trends']):
-        summary['recommendations'].append('📈 Monitor upward trends - identify and sustain growth drivers.')
-    
+        summary['recommendations'].append('Upward metrics: confirm whether growth comes from real demand, duplicate loading, price changes, or expanded coverage.')
+
     # Calculate data quality score (0-100)
-    anomaly_ratio = total_anomalies / (len(numeric_stats) * 10) if numeric_stats else 0
+    anomaly_ratio = total_anomalies / total_values if total_values else 0
     quality_score = max(0, 100 - (anomaly_ratio * 100) - (critical_count * 10))
     summary['dataQualityScore'] = round(quality_score, 1)
     

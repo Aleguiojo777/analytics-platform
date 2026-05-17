@@ -600,6 +600,12 @@ function flashAction(message) {
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 2600);
 }
+function cleanInsightText(value) {
+  return String(value || '')
+    .replace(/^[^A-Za-z0-9]+/, '')
+    .replace(/[\uD800-\uDFFF]/g, '')
+    .trim();
+}
 function renderAIInsights(data) {
   const summary = data.summary;
 
@@ -726,7 +732,7 @@ function renderAIInsights(data) {
     summary.recommendations.forEach(r => {
       html += `<div style="margin-bottom: 12px; padding: 8px; background: #1a1d2e; border-left: 3px solid #ffd166; border-radius: 4px;">
         <i class="bi bi-lightbulb" style="color: #ffd166; margin-right: 8px;"></i>
-        ${escHtml(r)}
+        ${escHtml(cleanInsightText(r))}
       </div>`;
     });
     html += '</div>';
@@ -743,7 +749,7 @@ function renderActionList(title, items) {
   return `
     <div class="anomaly-action-group">
       <strong>${escHtml(title)}</strong>
-      <ul>${items.map(item => `<li>${escHtml(String(item).replace(/^[^A-Za-z0-9]+/, '').trim())}</li>`).join('')}</ul>
+      <ul>${items.map(item => `<li>${escHtml(cleanInsightText(item))}</li>`).join('')}</ul>
     </div>
   `;
 }
@@ -809,7 +815,8 @@ function displayColumnAnalysis(analysis) {
     html += renderActionList('Fix steps', topDetail.fixSteps);
     html += renderActionList('Business questions', topDetail.businessQuestions);
     html += renderActionList('Decision guide', topDetail.decisionGuide);
-  }  html += '</div>';
+  }
+  html += '</div>';
   content.innerHTML = html;
 }
 
