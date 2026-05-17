@@ -11,9 +11,8 @@ analytics-platform/
 ├── config/
 │   └── authMiddleware.js     ← Checks JWT token on protected routes
 ├── controllers/
-│   ├── authController.js     ← Register / Login logic
-│   ├── dbController.js       ← SQL Server connection & table listing
-│   └── analyticsController.js← Fetches stats and chart data
+│   ├── db_controller.py      ← SQL Server connection and table listing logic
+│   └── analytics_controller.py ← Python analytics/summary endpoint logic
 ├── frontend/
 │   ├── index.html            ← Main HTML page
 │   ├── style.css             ← All styles
@@ -28,7 +27,7 @@ analytics-platform/
 │   └── tableFilter.js        ← Hides sensitive tables
 ├── .env                      ← Environment config (DO NOT commit this)
 ├── package.json
-└── server.js                 ← App entry point
+└── server.py                 ← Python Flask app entry point
 ```
 
 ---
@@ -64,7 +63,7 @@ npm start
 ```
 You should see:
 ```
-🚀 Analytics Platform running at http://localhost:3000
+� Analytics Platform running at http://localhost:3000
 ```
 
 ### 5b. Run as a Desktop App
@@ -134,7 +133,7 @@ Uses `nodemon` to restart the server automatically when you save changes.
 | Layer | Technology |
 |---|---|
 | Frontend | HTML, CSS, Bootstrap 5, Chart.js 4 |
-| Backend | Node.js, Express.js |
+| Backend | Python, Flask |
 | Database | SQL Server (via `mssql` package) |
 | Auth | bcryptjs + JWT |
 | Fonts | Syne + DM Mono (Google Fonts) |
