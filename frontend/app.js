@@ -97,7 +97,7 @@ async function doConnect() {
     if (res.error) return showError(errEl, res.error);
 
     availableTables = res.tables;
-    showSuccess(sucEl, `✓ Connected to "${res.database}" — ${res.tableCount} table(s) available`);
+    showSuccess(sucEl, `Connected to "${res.database}" - ${res.tableCount} table(s) available`);
 
     // Show DB badge in topbar
     const badge = document.getElementById('dbBadge');
@@ -126,7 +126,7 @@ function renderTableList(tables) {
     tables.forEach(t => {
       const item = document.createElement('div');
       item.className = 'table-item';
-      item.innerHTML = `<i class="bi bi-table"></i> ${escHtml(t)}`;
+      item.innerHTML = `<i class="bi bi-table"></i> ${escHtml(tableLabel(t))}`;
       item.addEventListener('click', () => selectTable(t, item));
       list.appendChild(item);
     });
@@ -151,13 +151,14 @@ async function loadAnalytics(tableName) {
   const content = document.getElementById('dashContent');
   const empty   = document.getElementById('dashEmpty');
 
+  resetAIInsightCards();
   content.classList.add('d-none');
   empty.classList.add('d-none');
   loading.classList.remove('d-none');
-  document.getElementById('dashTableName').textContent = `Table: ${tableName}`;
+  document.getElementById('dashTableName').textContent = `Table: ${tableLabel(tableName)}`;
 
   try {
-    const res = await post('/api/analytics/table', { connInfo, tableName });
+    const res = await post('/api/analytics/table', { connInfo, tableName: tablePayload(tableName) });
     loading.classList.add('d-none');
 
     if (res.error) {
@@ -237,6 +238,7 @@ function renderCharts(data) {
 
   const grid = document.getElementById('chartsGrid');
   grid.innerHTML = '';
+  appendQualityCard(grid, data);
 
   const chartDefaults = {
     plugins: {
@@ -270,7 +272,7 @@ function renderCharts(data) {
   // 2. Pie chart — category distribution
   if (data.categoryData && data.categoryData.data.length > 0) {
     const cat = data.categoryData;
-    const card = makeChartCard(`Distribution — ${cat.column}`);
+    const card = makeChartCard(`Distribution - ${cat.column}`);
     grid.appendChild(card);
     const ctx = card.querySelector('canvas').getContext('2d');
     const colors = ['#00e5a0','#4d9fff','#ffd166','#ff6b6b','#c77dff','#06d6a0','#ef476f','#ffd166','#118ab2','#073b4c'];
@@ -341,6 +343,34 @@ function renderCharts(data) {
   }
 }
 
+function appendQualityCard(grid, data) {
+  if (!data.columnQuality || data.columnQuality.length === 0) return;
+
+  const sorted = [...data.columnQuality]
+    .filter(c => c.nullCount > 0)
+    .sort((a, b) => b.nullPercent - a.nullPercent)
+    .slice(0, 5);
+
+  const card = document.createElement('div');
+  card.className = 'chart-card quality-card';
+  const rows = sorted.length
+    ? sorted.map(c => `
+      <div class="quality-row">
+        <span>${escHtml(c.column)}</span>
+        <strong>${c.nullPercent}% null</strong>
+      </div>
+    `).join('')
+    : '<div class="quality-empty">No missing values found in measured columns.</div>';
+
+  card.innerHTML = `
+    <div class="chart-card-title">Data Completeness</div>
+    <div class="quality-score">${fmt(data.completenessScore)}%</div>
+    <div class="quality-sub">complete across measured columns</div>
+    <div class="quality-list">${rows}</div>
+  `;
+  grid.appendChild(card);
+}
+
 function makeChartCard(title) {
   const card = document.createElement('div');
   card.className = 'chart-card';
@@ -376,6 +406,16 @@ function renderDataTable(rows, columns) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
+function tableLabel(table) {
+  if (!table) return '';
+  if (typeof table === 'string') return table;
+  return table.label || [table.schema, table.name].filter(Boolean).join('.') || String(table);
+}
+
+function tablePayload(table) {
+  if (!table || typeof table === 'string') return table;
+  return { schema: table.schema, name: table.name, label: tableLabel(table) };
+}
 async function post(url, body) {
   const res = await fetch(url, {
     method: 'POST',
@@ -399,7 +439,7 @@ function escHtml(str) {
 }
 
 function fmt(n) {
-  if (n === null || n === undefined) return '—';
+  if (n === null || n === undefined) return '-';
   if (Math.abs(n) >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (Math.abs(n) >= 1_000) return (n / 1_000).toFixed(1) + 'K';
   return Number(n).toLocaleString();
@@ -411,12 +451,13 @@ async function loadAIInsights(tableName) {
   const content = document.getElementById('insightsContent');
   const empty = document.getElementById('insightsEmpty');
 
+  resetAIInsightCards();
   content.classList.add('d-none');
   empty.classList.add('d-none');
   loading.classList.remove('d-none');
 
   try {
-    const res = await post('/api/analytics/executive-summary', { connInfo, tableName });
+    const res = await post('/api/analytics/executive-summary', { connInfo, tableName: tablePayload(tableName) });
     loading.classList.add('d-none');
 
     if (res.error) {
@@ -441,27 +482,40 @@ async function loadAIInsights(tableName) {
   }
 }
 
+function resetAIInsightCards() {
+  ['summaryCard', 'metricsCard', 'anomaliesCard', 'trendsCard', 'columnAnalysisCard', 'recommendationsCard']
+    .forEach(id => document.getElementById(id)?.classList.add('d-none'));
+  ['summaryContent', 'metricsContent', 'anomaliesContent', 'trendsContent', 'columnAnalysisContent', 'recommendationsContent']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+
+  const selector = document.getElementById('columnSelector');
+  if (selector) selector.innerHTML = '<option value="">Select a column to analyze...</option>';
+}
 function renderAIInsights(data) {
   const summary = data.summary;
 
   // Render Executive Summary
-  if (summary.keyMetrics && summary.keyMetrics.length > 0) {
-    const summaryCard = document.getElementById('summaryCard');
-    const summaryContent = document.getElementById('summaryContent');
-    summaryCard.classList.remove('d-none');
+  const summaryCard = document.getElementById('summaryCard');
+  const summaryContent = document.getElementById('summaryContent');
+  summaryCard.classList.remove('d-none');
 
-    let html = '<div class="insight-summary">';
+  let html = '<div class="insight-summary">';
+  if (summary.dataQualityScore !== undefined) {
+    html += `<p><strong>Data Quality Score:</strong> ${escHtml(summary.dataQualityScore)}%</p>`;
+  }
+  if (summary.keyMetrics && summary.keyMetrics.length > 0) {
     html += `<p><strong>Top ${summary.keyMetrics.length} Metrics:</strong></p>`;
     html += '<ul style="margin-left: 16px;">';
     summary.keyMetrics.forEach(m => {
       html += `
-        <li><strong>${escHtml(m.column)}</strong>: Avg ${escHtml(m.value)} 
+        <li><strong>${escHtml(m.column)}</strong>: Avg ${escHtml(m.value)}
             (Range: ${escHtml(m.range)}, Variation: ${escHtml(m.variation)})</li>
       `;
     });
-    html += '</ul></div>';
-    summaryContent.innerHTML = html;
+    html += '</ul>';
   }
+  html += '</div>';
+  summaryContent.innerHTML = html;
 
   // Render Key Metrics Cards
   if (summary.keyMetrics && summary.keyMetrics.length > 0) {
@@ -572,7 +626,7 @@ function displayColumnAnalysis(analysis) {
   let html = '<div class="column-analysis">';
   
   // Statistics
-  html += '<h4 style="margin-top: 12px; margin-bottom: 8px;">📊 Statistics</h4>';
+  html += '<h4 style="margin-top: 12px; margin-bottom: 8px;">Statistics</h4>';
   html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">';
   html += `<div><strong>Count:</strong> ${analysis.stats.count}</div>`;
   html += `<div><strong>Min:</strong> ${fmt(analysis.stats.min)}</div>`;
@@ -584,7 +638,7 @@ function displayColumnAnalysis(analysis) {
 
   // Trend Information
   if (analysis.trend) {
-    html += '<h4 style="margin-top: 16px; margin-bottom: 8px;">📈 Trend Analysis</h4>';
+    html += '<h4 style="margin-top: 16px; margin-bottom: 8px;">Trend Analysis</h4>';
     html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">';
     html += `<div><strong>Direction:</strong> ${analysis.trend.trend}</div>`;
     html += `<div><strong>Slope:</strong> ${analysis.trend.slope}</div>`;
@@ -598,7 +652,7 @@ function displayColumnAnalysis(analysis) {
 
   // Anomalies
   if (analysis.anomalies && analysis.anomalies.length > 0) {
-    html += `<h4 style="margin-top: 16px; margin-bottom: 8px;">⚠️ Anomalies Detected (${analysis.anomalies.length})</h4>`;
+    html += `<h4 style="margin-top: 16px; margin-bottom: 8px;">Anomalies Detected (${analysis.anomalies.length})</h4>`;
     html += '<div style="max-height: 200px; overflow-y: auto;">';
     analysis.anomalies.slice(0, 10).forEach(a => {
       html += `<div style="padding: 8px; background: #1a1d2e; margin-bottom: 4px; border-radius: 3px;">
@@ -611,6 +665,16 @@ function displayColumnAnalysis(analysis) {
     html += '</div>';
   }
 
+
+  if (analysis.anomaliesDetailed && analysis.anomaliesDetailed.length > 0) {
+    const topDetail = analysis.anomaliesDetailed[0];
+    html += '<h4 style="margin-top: 16px; margin-bottom: 8px;">Suggested Follow-Up</h4>';
+    html += '<ul style="margin-left: 16px; color: var(--text-secondary);">';
+    topDetail.recommendations.slice(0, 3).forEach(r => {
+      html += `<li>${escHtml(r.replace(/^[^A-Za-z0-9]+/, '').trim())}</li>`;
+    });
+    html += '</ul>';
+  }
   html += '</div>';
   content.innerHTML = html;
 }

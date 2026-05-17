@@ -7,7 +7,7 @@ from routes.analytics_routes import bp as analytics_bp
 from routes.db_routes import bp as db_bp
 
 app = Flask(__name__, static_folder='frontend', static_url_path='')
-CORS(app)
+CORS(app, resources={r'/api/*': {'origins': os.getenv('CORS_ORIGINS', 'http://localhost:3000').split(',')}})
 
 app.register_blueprint(db_bp)
 app.register_blueprint(analytics_bp)
@@ -28,5 +28,5 @@ def index():
 
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 3000))
-    print(f'🐍 Python Analytics Platform running on http://localhost:{port}')
+    print(f'Python Analytics Platform running on http://localhost:{port}')
     app.run(host='0.0.0.0', port=port, debug=True)

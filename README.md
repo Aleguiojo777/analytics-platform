@@ -1,102 +1,60 @@
-# DataLens — Data Analytics Platform
+# DataLens - Data Analytics Platform
 
-A full-stack analytics dashboard for SQL Server. Connect to any SQL Server database, select a table, and instantly generate charts and statistics.
+A Flask + Chart.js analytics dashboard for SQL Server. Connect to a database, browse safe tables, preview rows, and generate charts plus statistical insights.
 
----
+## Project Structure
 
-## 📂 Folder Structure
-
-```
+```text
 analytics-platform/
-├── controllers/
-│   ├── db_controller.py      ← SQL Server connection and table listing logic
-│   └── analytics_controller.py ← Python analytics/summary endpoint logic
-├── frontend/
-│   ├── index.html            ← Main HTML page
-│   ├── style.css             ← All styles
-│   └── app.js                ← All frontend JavaScript
-├── routes/
-│   ├── db_routes.py          ← /api/db/* endpoints
-│   └── analytics_routes.py   ← /api/analytics/* endpoints
-├── utils/
-│   └── table_filter.py       ← Hides sensitive tables
-├── .env                      ← Environment config (DO NOT commit this)
-├── requirements.txt          ← Python dependencies
-└── server.py                 ← Python Flask app entry point
+  controllers/              Backend request handlers
+  frontend/                 HTML, CSS, and browser JavaScript
+  routes/                   Flask API route registration
+  utils/                    Shared validation/filter helpers
+  analytics_insights.py     Statistics, anomaly, and trend helpers
+  requirements.txt          Python dependencies
+  server.py                 Flask app entry point
 ```
 
----
+## Setup
 
-## ⚡ Setup (Step-by-Step for Beginners)
+1. Create and activate a Python 3.9+ virtual environment.
 
-### 1. Install Python
-Download and install Python 3.9+ from: https://www.python.org/downloads/
-
-### 2. Open a Terminal / Command Prompt
-Navigate to the project folder:
-```bash
-cd path/to/analytics-platform
-```
-
-### 3. Create and Activate Virtual Environment
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\Activate.ps1
+.\venv\Scripts\Activate.ps1
 ```
 
-### 4. Install Dependencies
+2. Install dependencies.
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### 5. Start the Server
-```bash
-python server.py
-```
-You should see:
-```
- * Running on http://localhost:3000
-```
-
----
-
-## 🔒 Security Features
-
-| Feature | How it works |
-|---|---|
-| Password hashing | `bcrypt` with 12 salt rounds |
-| Authentication | JWT tokens (8-hour expiry) |
-| Sensitive table hiding | Tables with names containing `user`, `password`, `auth`, `token`, etc. are automatically hidden |
-| Input validation | Table names are checked before any SQL query |
-| Parameterized queries | All user inputs use parameterized queries |
-
----
-
-## 🚀 Development Mode
+3. Start the app.
 
 ```bash
 python server.py
 ```
-The server will restart automatically when you save changes if you use tools like `watchdog`.
 
----
+The app runs on `http://localhost:3000` by default.
 
-## 📦 Tech Stack
+## Configuration
 
-| Layer | Technology |
-|---|---|
-| Frontend | HTML, CSS, Bootstrap 5, Chart.js 4 |
-| Backend | Python, Flask |
-| Database | SQL Server |
-| Auth | bcrypt + JWT |
-| Fonts | Syne + DM Mono (Google Fonts) |
+| Variable | Default | Purpose |
+|---|---|---|
+| `PORT` | `3000` | Flask server port |
+| `ODBC_DRIVER` | `ODBC Driver 18 for SQL Server` | SQL Server ODBC driver name |
+| `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated allowed origins for `/api/*` |
 
----
+## Current Security Notes
 
-## 🔧 Troubleshooting
+- The app filters table names that look sensitive and validates schema/table identifiers before building SQL.
+- API CORS is restricted by `CORS_ORIGINS` instead of allowing every origin.
+- This project does not currently include login, JWT, or role-based authorization. Add authentication before deploying it outside a trusted local/internal environment.
+- Database credentials are submitted from the browser for each analysis request. For production, store short-lived connection state server-side instead.
 
-**"Connection failed"** — Check your server IP, port, username, and password. Make sure SQL Server allows remote connections and TCP/IP is enabled in SQL Server Configuration Manager.
+## Troubleshooting
 
-**"No tables found"** — Your user may not have SELECT permission on any tables, or all tables have sensitive names.
-
-**Port already in use** — Change `PORT=3001` in `.env`.
+- `Connection failed`: Check SQL Server host, port, username, password, TCP/IP access, firewall rules, and the installed ODBC driver.
+- `No accessible tables found`: The SQL user may lack table permissions, or table names may match the sensitive-table filter.
+- `Port already in use`: Set `PORT=3001` or another open port before starting the server.

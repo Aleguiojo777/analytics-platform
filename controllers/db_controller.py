@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 import pyodbc
 from flask import jsonify, request
 
-from utils.table_filter import filter_sensitive_tables, normalize_boolean
+from utils.table_filter import filter_sensitive_tables, normalize_boolean, table_label
 
 
 def build_connection_string(conn_info: Dict[str, Any]) -> str:
@@ -86,9 +86,22 @@ def connect():
     try:
         with open_connection(conn_info) as connection:
             cursor = connection.cursor()
-            cursor.execute("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME")
-            tables = [row.TABLE_NAME for row in cursor.fetchall()]
-            safe_tables = filter_sensitive_tables(tables)
+            cursor.execute(
+                "SELECT TABLE_SCHEMA, TABLE_NAME "
+                "FROM INFORMATION_SCHEMA.TABLES "
+                "WHERE TABLE_TYPE = 'BASE TABLE' "
+                "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+            )
+            tables = [
+                {
+                    'schema': row.TABLE_SCHEMA,
+                    'name': row.TABLE_NAME,
+                    'label': table_label(row.TABLE_SCHEMA, row.TABLE_NAME)
+                }
+                for row in cursor.fetchall()
+            ]
+            safe_labels = set(filter_sensitive_tables([table['label'] for table in tables]))
+            safe_tables = [table for table in tables if table['label'] in safe_labels]
             return jsonify({
                 'message': f'Connected to "{database}" successfully.',
                 'database': database,

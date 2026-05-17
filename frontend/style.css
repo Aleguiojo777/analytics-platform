@@ -560,6 +560,64 @@ body {
   margin-bottom: 16px;
 }
 .chart-card canvas { max-height: 280px; }
+.quality-card {
+  min-height: 280px;
+}
+
+.quality-score {
+  font-family: var(--font-head);
+  font-size: 42px;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.quality-sub {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 6px;
+  margin-bottom: 18px;
+}
+
+.quality-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quality-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.quality-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quality-row strong {
+  color: var(--accent4);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.quality-empty {
+  color: var(--text-secondary);
+  font-size: 13px;
+  padding: 12px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-sm);
+}
 
 /* ── DATA TABLE ──────────────────── */
 .table-wrap { overflow-x: auto; }
