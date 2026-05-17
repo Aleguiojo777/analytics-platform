@@ -1,7 +1,4 @@
-/* ══════════════════════════════════════
-   DataLens — Dark Industrial Analytics Theme
-   Fonts: Syne (headings) + DM Mono (data/labels)
-   ══════════════════════════════════════ */
+﻿/* DataLens - Dark Industrial Analytics Theme */
 
 :root {
   --bg-base:       #0a0b0e;
@@ -37,7 +34,7 @@ body {
   overflow-x: hidden;
 }
 
-/* ── AUTH ──────────────────────────── */
+/* AUTH */
 .auth-screen {
   min-height: 100vh;
   display: flex;
@@ -198,7 +195,7 @@ body {
 }
 .btn-primary-action:active { transform: translateY(0); }
 
-/* ── LAYOUT ────────────────────────── */
+/* LAYOUT */
 #appScreen {
   display: flex;
   min-height: 100vh;
@@ -315,7 +312,7 @@ body {
 }
 .btn-logout:hover { border-color: var(--accent3); color: var(--accent3); }
 
-/* ── MAIN CONTENT ─────────────────── */
+/* MAIN CONTENT */
 .main-content {
   margin-left: var(--sidebar-w);
   flex: 1;
@@ -367,7 +364,7 @@ body {
   color: var(--accent);
 }
 
-/* ── PANELS ───────────────────────── */
+/* PANELS */
 .panel {
   display: none;
   padding: 28px;
@@ -446,7 +443,7 @@ body {
   font-size: 13px;
 }
 
-/* ── CONNECT ─────────────────────── */
+/* CONNECT */
 .connect-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -571,7 +568,7 @@ body {
   font-size: 11px;
 }
 
-/* ── STATS ROW ───────────────────── */
+/* STATS ROW */
 .stats-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -619,7 +616,7 @@ body {
   opacity: .08;
 }
 
-/* ── CHARTS GRID ─────────────────── */
+/* CHARTS GRID */
 .charts-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
@@ -700,7 +697,7 @@ body {
   border-radius: var(--radius-sm);
 }
 
-/* ── DATA TABLE ──────────────────── */
+/* DATA TABLE */
 .table-wrap { overflow-x: auto; }
 .data-table {
   width: 100%;
@@ -730,7 +727,7 @@ body {
 .data-table tr:hover td { background: var(--bg-hover); color: var(--text-primary); }
 .data-table tbody tr:last-child td { border-bottom: none; }
 
-/* ── LOADING / EMPTY ─────────────── */
+/* LOADING / EMPTY */
 .loading-state {
   display: flex;
   flex-direction: column;
@@ -761,7 +758,7 @@ body {
 .empty-state i { font-size: 48px; opacity: .3; }
 .empty-state p { font-size: 14px; }
 
-/* ── AI INSIGHTS ──────────────────── */
+/* AI INSIGHTS */
 .insight-card {
   background: var(--bg-raised);
   border: 1px solid var(--border);
@@ -930,7 +927,7 @@ body {
   box-shadow: 0 0 8px var(--accent-dim);
 }
 
-/* ── RESPONSIVE ──────────────────── */
+/* RESPONSIVE */
 @media (max-width: 768px) {
   .sidebar { transform: translateX(calc(-1 * var(--sidebar-w))); }
   .sidebar.mobile-open { transform: translateX(0); box-shadow: 4px 0 40px #00000080; }

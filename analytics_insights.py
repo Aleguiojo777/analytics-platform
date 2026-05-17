@@ -1,7 +1,7 @@
-import math
+﻿import math
 from typing import List, Dict, Any, Optional, Tuple
 
-# ── AI INSIGHTS FUNCTIONS ──────────────────────────────────────────
+# AI INSIGHTS FUNCTIONS
 
 # Simple statistics helpers
 def mean(arr: List[float]) -> float:
@@ -121,23 +121,23 @@ def generate_insights(column: str, stats: Dict[str, float], anomalies: List[Dict
     variation = ((stats['max'] - stats['min']) / max(abs(stats['avg']), 1)) * 100
     
     if variation > 100:
-        insights.append(f"⚠️ {column}: High variability detected ({variation:.1f}% range). Data may need normalization or investigation.")
+        insights.append(f"Warning: {column}: High variability detected ({variation:.1f}% range). Data may need normalization or investigation.")
     elif variation < 20:
-        insights.append(f"✓ {column}: Stable with low variability ({variation:.1f}% range). Data quality is consistent.")
+        insights.append(f"OK: {column}: Stable with low variability ({variation:.1f}% range). Data quality is consistent.")
     else:
-        insights.append(f"→ {column}: Moderate variability ({variation:.1f}% range).")
+        insights.append(f"Info: {column}: Moderate variability ({variation:.1f}% range).")
     
     if anomalies:
         pct = (len(anomalies) / stats['count']) * 100
-        insights.append(f"⚠️ {len(anomalies)} anomalies detected ({pct:.1f}% of data) - see detailed analysis below.")
+        insights.append(f"Warning: {len(anomalies)} anomalies detected ({pct:.1f}% of data) - see detailed analysis below.")
     
     if trend:
         if trend['trend'] == 'upward':
-            insights.append(f"📈 Upward trend detected ({trend['strength']} confidence: {trend['confidence']}%). Monitor for continued growth.")
+            insights.append(f"Upward trend detected ({trend['strength']} confidence: {trend['confidence']}%). Monitor for continued growth.")
         elif trend['trend'] == 'downward':
-            insights.append(f"📉 Downward trend detected ({trend['strength']} confidence: {trend['confidence']}%). Investigate root causes.")
+            insights.append(f"Downward trend detected ({trend['strength']} confidence: {trend['confidence']}%). Investigate root causes.")
         else:
-            insights.append("→ Stable trend over time. No significant directional change detected.")
+            insights.append("Stable trend over time. No significant directional change detected.")
     
     return insights
 

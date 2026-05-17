@@ -1,15 +1,13 @@
-/* ══════════════════════════════════════
-   DataLens — Frontend Application Logic
-   ══════════════════════════════════════ */
+﻿/* DataLens - Frontend Application Logic */
 
-// ── State ──────────────────────────────────────────────────────────────
+// State
 let connInfo = null;          // DB connection details
 let availableTables = [];
 let selectedTable = null;
 let analyticsData = null;
 let charts = {};              // Chart.js instances
 
-// ── Init ───────────────────────────────────────────────────────────────
+// Init
 window.addEventListener('DOMContentLoaded', () => {
   showApp();
 });
@@ -27,7 +25,7 @@ function populateUserInfo() {
   document.getElementById('sidebarUserRole').textContent = 'Analyst';
 }
 
-// ── Navigation ─────────────────────────────────────────────────────────
+// Navigation
 function showPanel(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -68,7 +66,7 @@ function toggleSidebar() {
   }
 }
 
-// ── DB Connect ─────────────────────────────────────────────────────────
+// DB Connect
 async function doConnect() {
   const server   = document.getElementById('dbServer').value.trim();
   const port     = document.getElementById('dbPort').value.trim();
@@ -176,7 +174,7 @@ async function selectTable(tableName, itemEl) {
   await loadAnalytics(tableName);
 }
 
-// ── Analytics ──────────────────────────────────────────────────────────
+// Analytics
 async function loadAnalytics(tableName) {
   const loading = document.getElementById('dashLoading');
   const content = document.getElementById('dashContent');
@@ -287,9 +285,9 @@ function renderCharts(data) {
     }
   };
 
-  // 1. Bar chart — numeric analytics metrics
+  // 1. Bar chart - numeric analytics metrics
   if (data.numericStats.length > 0) {
-    const card = makeChartCard('Numeric Analytics — Smallest / Largest / Average');
+    const card = makeChartCard('Numeric Analytics - Smallest / Largest / Average');
     grid.appendChild(card);
     const ctx = card.querySelector('canvas').getContext('2d');
     charts['numStats'] = new Chart(ctx, {
@@ -306,7 +304,7 @@ function renderCharts(data) {
     });
   }
 
-  // 2. Pie chart — category distribution
+  // 2. Pie chart - category distribution
   if (data.categoryData && data.categoryData.data.length > 0) {
     const cat = data.categoryData;
     const card = makeChartCard(`Distribution - ${cat.column}`);
@@ -326,7 +324,7 @@ function renderCharts(data) {
     });
   }
 
-  // 3. Line chart — time series
+  // 3. Line chart - time series
   if (data.timeSeriesData && data.timeSeriesData.data.length > 0) {
     const ts = data.timeSeriesData;
     const card = makeChartCard(`${ts.valueColumn} over Time (${ts.dateColumn})`);
@@ -352,7 +350,7 @@ function renderCharts(data) {
     });
   }
 
-  // 4. Horizontal bar — sum of numeric columns
+  // 4. Horizontal bar - sum of numeric columns
   if (data.numericStats.length > 1) {
     const card = makeChartCard('Column Totals (Sum)');
     grid.appendChild(card);
@@ -467,7 +465,7 @@ function csvCell(value) {
   const text = String(value).replace(/"/g, '""');
   return /[",\r\n]/.test(text) ? `"${text}"` : text;
 }
-// ── Helpers ────────────────────────────────────────────────────────────
+// Helpers
 function tableLabel(table) {
   if (!table) return '';
   if (typeof table === 'string') return table;
@@ -507,7 +505,7 @@ function fmt(n) {
   return Number(n).toLocaleString();
 }
 
-// ── AI INSIGHTS ────────────────────────────────────────────────────────
+// AI INSIGHTS
 async function loadAIInsights(tableName) {
   const loading = document.getElementById('insightsLoading');
   const content = document.getElementById('insightsContent');
@@ -689,7 +687,7 @@ function renderAIInsights(data) {
 
     let html = '<div class="trends-list">';
     summary.trends.forEach(t => {
-      const icon = t.direction === 'upward' ? '↑' : '↓';
+      const icon = t.direction === 'upward' ? '&uarr;' : '&darr;';
       const color = t.direction === 'upward' ? '#00e5a0' : '#ff6b6b';
       html += `
         <div class="trend-item" style="border-left-color: ${color}">
