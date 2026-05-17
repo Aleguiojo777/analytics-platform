@@ -79,23 +79,23 @@
           <div class="row g-3">
             <div class="col-md-8">
               <label class="form-label-custom">Server / Host</label>
-              <input type="text" id="dbServer" class="form-input-custom" placeholder="localhost or 192.168.1.10"/>
+              <input type="text" id="dbServer" class="form-input-custom" placeholder="localhost or 192.168.1.10" maxlength="256" pattern="[A-Za-z0-9_.\\,\-:]+"/>
             </div>
             <div class="col-md-4">
               <label class="form-label-custom">Port</label>
-              <input type="number" id="dbPort" class="form-input-custom" placeholder="1433" value="1433"/>
+              <input type="number" id="dbPort" class="form-input-custom" placeholder="1433" value="1433" min="1" max="65535"/>
             </div>
             <div class="col-md-6">
               <label class="form-label-custom">Database Name</label>
-              <input type="text" id="dbName" class="form-input-custom" placeholder="MyDatabase"/>
+              <input type="text" id="dbName" class="form-input-custom" placeholder="MyDatabase" maxlength="256"/>
             </div>
             <div class="col-md-6">
               <label class="form-label-custom">Username</label>
-              <input type="text" id="dbUser" class="form-input-custom" placeholder="sa"/>
+              <input type="text" id="dbUser" class="form-input-custom" placeholder="sa" maxlength="256"/>
             </div>
             <div class="col-12">
               <label class="form-label-custom">Password</label>
-              <input type="password" id="dbPass" class="form-input-custom" placeholder="Password"/>
+              <input type="password" id="dbPass" class="form-input-custom" placeholder="Password" maxlength="512"/>
             </div>
             <div class="col-12 d-flex gap-4">
               <label class="toggle-label">

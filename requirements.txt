@@ -1,5 +1,5 @@
-Flask==2.3.3
+﻿Flask==2.3.3
 Flask-CORS==4.0.0
 Werkzeug==2.3.7
-pyodbc==4.0.42
+pyodbc==5.3.0
 waitress==3.0.0

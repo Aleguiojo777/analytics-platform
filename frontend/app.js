@@ -1,15 +1,15 @@
-/* ══════════════════════════════════════
-   DataLens — Frontend Application Logic
-   ══════════════════════════════════════ */
+﻿/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   DataLens â€” Frontend Application Logic
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
-// ── State ──────────────────────────────────────────────────────────────
+// â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 let connInfo = null;          // DB connection details
 let availableTables = [];
 let selectedTable = null;
 let analyticsData = null;
 let charts = {};              // Chart.js instances
 
-// ── Init ───────────────────────────────────────────────────────────────
+// â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.addEventListener('DOMContentLoaded', () => {
   showApp();
 });
@@ -27,7 +27,7 @@ function populateUserInfo() {
   document.getElementById('sidebarUserRole').textContent = 'Analyst';
 }
 
-// ── Navigation ─────────────────────────────────────────────────────────
+// â”€â”€ Navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showPanel(name) {
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -68,7 +68,7 @@ function toggleSidebar() {
   }
 }
 
-// ── DB Connect ─────────────────────────────────────────────────────────
+// â”€â”€ DB Connect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function doConnect() {
   const server   = document.getElementById('dbServer').value.trim();
   const port     = document.getElementById('dbPort').value.trim();
@@ -81,7 +81,10 @@ async function doConnect() {
   const sucEl    = document.getElementById('connectSuccess');
 
   hideEl(errEl); hideEl(sucEl);
-  if (!server || !database || !username) return showError(errEl, 'Server, database, and username are required.');
+  if (!server || !database || !username || !password) return showError(errEl, 'Server, database, username, and password are required.');
+  if (!/^[A-Za-z0-9_.\\,\-:]+$/.test(server)) return showError(errEl, 'Server contains invalid characters.');
+  if (port && (!/^\d+$/.test(port) || Number(port) < 1 || Number(port) > 65535)) return showError(errEl, 'Port must be between 1 and 65535.');
+  if ([server, database, username, password].some(hasControlChars)) return showError(errEl, 'Fields contain invalid characters.');
 
   const btn = document.getElementById('btnConnect');
   btn.disabled = true;
@@ -110,6 +113,10 @@ async function doConnect() {
     btn.innerHTML = '<i class="bi bi-lightning-charge-fill"></i><span>Connect & Fetch Tables</span>';
     showError(errEl, 'Network error. Is the server running?');
   }
+}
+
+function hasControlChars(value) {
+  return /[\x00-\x1F\x7F]/.test(String(value));
 }
 
 function renderTableList(tables) {
@@ -156,7 +163,7 @@ async function selectTable(tableName, itemEl) {
   await loadAnalytics(tableName);
 }
 
-// ── Analytics ──────────────────────────────────────────────────────────
+// â”€â”€ Analytics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadAnalytics(tableName) {
   const loading = document.getElementById('dashLoading');
   const content = document.getElementById('dashContent');
@@ -224,9 +231,9 @@ function renderStats(data) {
   if (data.numericStats.length > 0) {
     const ns = data.numericStats[0];
     [
-      { label: `Smallest Value — ${ns.column}`, value: fmt(ns.min), sub: 'smallest data point', icon: 'bi-arrow-down-circle', accent: accentList[1] },
-      { label: `Largest Value — ${ns.column}`, value: fmt(ns.max), sub: 'largest data point', icon: 'bi-arrow-up-circle', accent: accentList[0] },
-      { label: `Average Value — ${ns.column}`, value: fmt(ns.avg), sub: 'average value', icon: 'bi-calculator', accent: accentList[3] }
+      { label: `Smallest Value â€” ${ns.column}`, value: fmt(ns.min), sub: 'smallest data point', icon: 'bi-arrow-down-circle', accent: accentList[1] },
+      { label: `Largest Value â€” ${ns.column}`, value: fmt(ns.max), sub: 'largest data point', icon: 'bi-arrow-up-circle', accent: accentList[0] },
+      { label: `Average Value â€” ${ns.column}`, value: fmt(ns.avg), sub: 'average value', icon: 'bi-calculator', accent: accentList[3] }
     ].forEach(c => {
       const card = document.createElement('div');
       card.className = 'stat-card';
@@ -261,9 +268,9 @@ function renderCharts(data) {
     }
   };
 
-  // 1. Bar chart — numeric analytics metrics
+  // 1. Bar chart â€” numeric analytics metrics
   if (data.numericStats.length > 0) {
-    const card = makeChartCard('Numeric Analytics — Smallest / Largest / Average');
+    const card = makeChartCard('Numeric Analytics â€” Smallest / Largest / Average');
     grid.appendChild(card);
     const ctx = card.querySelector('canvas').getContext('2d');
     charts['numStats'] = new Chart(ctx, {
@@ -280,7 +287,7 @@ function renderCharts(data) {
     });
   }
 
-  // 2. Pie chart — category distribution
+  // 2. Pie chart â€” category distribution
   if (data.categoryData && data.categoryData.data.length > 0) {
     const cat = data.categoryData;
     const card = makeChartCard(`Distribution - ${cat.column}`);
@@ -300,7 +307,7 @@ function renderCharts(data) {
     });
   }
 
-  // 3. Line chart — time series
+  // 3. Line chart â€” time series
   if (data.timeSeriesData && data.timeSeriesData.data.length > 0) {
     const ts = data.timeSeriesData;
     const card = makeChartCard(`${ts.valueColumn} over Time (${ts.dateColumn})`);
@@ -326,7 +333,7 @@ function renderCharts(data) {
     });
   }
 
-  // 4. Horizontal bar — sum of numeric columns
+  // 4. Horizontal bar â€” sum of numeric columns
   if (data.numericStats.length > 1) {
     const card = makeChartCard('Column Totals (Sum)');
     grid.appendChild(card);
@@ -441,7 +448,7 @@ function csvCell(value) {
   const text = String(value).replace(/"/g, '""');
   return /[",\r\n]/.test(text) ? `"${text}"` : text;
 }
-// ── Helpers ────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function tableLabel(table) {
   if (!table) return '';
   if (typeof table === 'string') return table;
@@ -481,7 +488,7 @@ function fmt(n) {
   return Number(n).toLocaleString();
 }
 
-// ── AI INSIGHTS ────────────────────────────────────────────────────────
+// â”€â”€ AI INSIGHTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadAIInsights(tableName) {
   const loading = document.getElementById('insightsLoading');
   const content = document.getElementById('insightsContent');
@@ -649,7 +656,7 @@ function renderAIInsights(data) {
 
     let html = '<div class="trends-list">';
     summary.trends.forEach(t => {
-      const icon = t.direction === 'upward' ? '↑' : '↓';
+      const icon = t.direction === 'upward' ? 'â†‘' : 'â†“';
       const color = t.direction === 'upward' ? '#00e5a0' : '#ff6b6b';
       html += `
         <div class="trend-item" style="border-left-color: ${color}">

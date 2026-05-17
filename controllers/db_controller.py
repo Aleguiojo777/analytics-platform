@@ -1,6 +1,7 @@
 import os
 import decimal
 import datetime
+import re
 from typing import Any, Dict, List
 
 import pyodbc
@@ -9,31 +10,66 @@ from flask import jsonify, request
 from utils.table_filter import filter_sensitive_tables, normalize_boolean, table_label
 
 
+MAX_FIELD_LENGTH = 256
+SERVER_PATTERN = re.compile(r'^[A-Za-z0-9_.\\,\-:]+$')
+
+
+def clean_text_field(value: Any, field_name: str, max_length: int = MAX_FIELD_LENGTH) -> str:
+    text = str(value or '').strip()
+    if not text:
+        raise ValueError(f'{field_name} is required.')
+    if len(text) > max_length:
+        raise ValueError(f'{field_name} is too long.')
+    if any(ord(char) < 32 for char in text):
+        raise ValueError(f'{field_name} contains invalid characters.')
+    return text
+
+
+def clean_server(value: Any) -> str:
+    server = clean_text_field(value, 'server')
+    if ';' in server or not SERVER_PATTERN.fullmatch(server):
+        raise ValueError('server contains invalid characters.')
+    return server
+
+
+def clean_port(value: Any) -> str:
+    if value in (None, ''):
+        return ''
+    try:
+        port = int(str(value).strip())
+    except (TypeError, ValueError):
+        raise ValueError('port must be a number.')
+    if port < 1 or port > 65535:
+        raise ValueError('port must be between 1 and 65535.')
+    return str(port)
+
+
+def odbc_value(value: str) -> str:
+    return '{' + value.replace('}', '}}') + '}'
+
+
 def build_connection_string(conn_info: Dict[str, Any]) -> str:
-    server = conn_info.get('server', '').strip()
-    port = conn_info.get('port')
-    database = conn_info.get('database', '').strip()
-    username = conn_info.get('username', '').strip()
-    password = conn_info.get('password', '')
+    server = clean_server(conn_info.get('server'))
+    port = clean_port(conn_info.get('port'))
+    database = clean_text_field(conn_info.get('database'), 'database')
+    username = clean_text_field(conn_info.get('username'), 'username')
+    password = clean_text_field(conn_info.get('password'), 'password', max_length=512)
     encrypt = normalize_boolean(conn_info.get('encrypt'))
     trust_cert = normalize_boolean(conn_info.get('trustCert'))
 
-    if not server or not database or not username or not password:
-        raise ValueError('server, database, username, and password are required.')
-
-    server_target = f"{server},{int(port)}" if port else server
-    driver = conn_info.get('driver') or os.getenv('ODBC_DRIVER', 'ODBC Driver 18 for SQL Server')
+    server_target = f'{server},{port}' if port else server
+    driver = os.getenv('ODBC_DRIVER', 'ODBC Driver 18 for SQL Server')
     trust_server = 'Yes' if encrypt or trust_cert else 'No'
 
     return (
-        f"DRIVER={{{driver}}};"
-        f"SERVER={server_target};"
-        f"DATABASE={database};"
-        f"UID={username};"
-        f"PWD={password};"
+        f'DRIVER={odbc_value(driver)};'
+        f'SERVER={odbc_value(server_target)};'
+        f'DATABASE={odbc_value(database)};'
+        f'UID={odbc_value(username)};'
+        f'PWD={odbc_value(password)};'
         f"Encrypt={'Yes' if encrypt else 'No'};"
-        f"TrustServerCertificate={trust_server};"
-        f"Connection Timeout=10;"
+        f'TrustServerCertificate={trust_server};'
+        f'Connection Timeout=10;'
     )
 
 
@@ -104,9 +140,11 @@ def connect():
             safe_tables = [table for table in tables if table['label'] in safe_labels]
             return jsonify({
                 'message': f'Connected to "{database}" successfully.',
-                'database': database,
+                'database': clean_text_field(database, 'database'),
                 'tables': safe_tables,
                 'tableCount': len(safe_tables)
             })
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
     except Exception as error:
         return jsonify({'error': f'Connection failed: {str(error)}'}), 500
