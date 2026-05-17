@@ -3,15 +3,14 @@ import os
 from flask import Flask, send_from_directory
 from flask_cors import CORS
 
-from controllers.analytics_controller import get_executive_summary, get_table_analytics
-from controllers.db_controller import connect
+from routes.analytics_routes import bp as analytics_bp
+from routes.db_routes import bp as db_bp
 
 app = Flask(__name__, static_folder='frontend', static_url_path='')
 CORS(app)
 
-app.add_url_rule('/api/db/connect', view_func=connect, methods=['POST'])
-app.add_url_rule('/api/analytics/table', view_func=get_table_analytics, methods=['POST'])
-app.add_url_rule('/api/analytics/executive-summary', view_func=get_executive_summary, methods=['POST'])
+app.register_blueprint(db_bp)
+app.register_blueprint(analytics_bp)
 
 
 @app.route('/<path:path>', methods=['GET'])
