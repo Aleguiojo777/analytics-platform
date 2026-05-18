@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, dialog, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -8,6 +8,15 @@ const DEFAULT_PORT = 3000;
 const START_TIMEOUT_MS = 30000;
 let mainWindow;
 let backendProcess;
+let backendOutput = [];
+
+function appendBackendOutput(data) {
+  const text = data.toString().trim();
+  if (!text) return;
+
+  backendOutput.push(text);
+  backendOutput = backendOutput.slice(-12);
+}
 
 function appRoot() {
   return app.isPackaged ? path.join(process.resourcesPath, 'app') : path.join(__dirname, '..');
@@ -24,11 +33,13 @@ function pythonCandidates() {
   if (process.env.DATALENS_PYTHON) candidates.push(process.env.DATALENS_PYTHON);
 
   if (process.platform === 'win32') {
-    candidates.push(path.join(root, '.venv', 'Scripts', 'python.exe'));
+    const localPython = path.join(root, '.venv', 'Scripts', 'python.exe');
+    if (fs.existsSync(localPython)) candidates.push(localPython);
     candidates.push('py');
     candidates.push('python');
   } else {
-    candidates.push(path.join(root, '.venv', 'bin', 'python'));
+    const localPython = path.join(root, '.venv', 'bin', 'python');
+    if (fs.existsSync(localPython)) candidates.push(localPython);
     candidates.push('python3');
     candidates.push('python');
   }
@@ -61,7 +72,51 @@ function waitForServer(url, timeoutMs = START_TIMEOUT_MS) {
   });
 }
 
-function spawnBackend(port) {
+function spawnCandidate(python, script, env) {
+  return new Promise((resolve, reject) => {
+    const args = python === 'py' ? ['-3', script] : [script];
+    const child = spawn(python, args, {
+      cwd: appRoot(),
+      env,
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let settled = false;
+
+    child.stdout.on('data', (data) => {
+      appendBackendOutput(data);
+      console.log(`[backend] ${data}`);
+    });
+    child.stderr.on('data', (data) => {
+      appendBackendOutput(data);
+      console.error(`[backend] ${data}`);
+    });
+
+    child.once('spawn', () => {
+      settled = true;
+      backendProcess = child;
+      resolve(child);
+    });
+
+    child.once('error', (error) => {
+      if (!settled) {
+        reject(error);
+        return;
+      }
+
+      appendBackendOutput(error.message);
+      console.error(`[backend] ${error.message}`);
+    });
+
+    child.on('exit', (code, signal) => {
+      if (backendProcess === child) backendProcess = null;
+      console.log(`[backend] exited code=${code} signal=${signal}`);
+    });
+  });
+}
+
+async function spawnBackend(port) {
   const script = backendScriptPath();
   if (!fs.existsSync(script)) {
     throw new Error(`Missing backend script: ${script}`);
@@ -76,25 +131,11 @@ function spawnBackend(port) {
 
   const candidates = pythonCandidates();
   const errors = [];
+  backendOutput = [];
 
   for (const python of candidates) {
     try {
-      const args = python === 'py' ? ['-3', script] : [script];
-      const child = spawn(python, args, {
-        cwd: appRoot(),
-        env,
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
-
-      child.stdout.on('data', (data) => console.log(`[backend] ${data}`));
-      child.stderr.on('data', (data) => console.error(`[backend] ${data}`));
-      child.on('exit', (code, signal) => {
-        if (backendProcess === child) backendProcess = null;
-        console.log(`[backend] exited code=${code} signal=${signal}`);
-      });
-
-      backendProcess = child;
+      await spawnCandidate(python, script, env);
       return;
     } catch (error) {
       errors.push(`${python}: ${error.message}`);
@@ -128,15 +169,16 @@ async function createWindow() {
   });
 
   try {
-    spawnBackend(port);
+    await spawnBackend(port);
     await waitForServer(appUrl);
     await mainWindow.loadURL(appUrl);
   } catch (error) {
+    const output = backendOutput.length ? `\n\nBackend output:\n${backendOutput.join('\n')}` : '';
     await dialog.showMessageBox(mainWindow, {
       type: 'error',
       title: 'DataLens failed to start',
       message: 'DataLens could not start the local Python backend.',
-      detail: error.message
+      detail: `${error.message}${output}`
     });
     app.quit();
   }
