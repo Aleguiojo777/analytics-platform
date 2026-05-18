@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 
 from flask import jsonify, request
 
-from analytics_insights import (
+from services.analytics_insights import (
     analyze_anomalies_detailed,
     analyze_trend,
     detect_anomalies,

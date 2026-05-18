@@ -22,7 +22,7 @@
     "productName": "DataLens",
     "asar": false,
     "files": [
-      "analytics_insights.py",
+      "services/**/*",
       "controllers/**/*",
       "electron/**/*",
       "frontend/**/*",

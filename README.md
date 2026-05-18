@@ -19,7 +19,7 @@ analytics-platform/
   frontend/                 HTML, CSS, and browser JavaScript
   routes/                   Flask API route registration
   utils/                    Shared validation/filter helpers
-  analytics_insights.py     Statistics, anomaly, and trend helpers
+  services/                 Analytics, statistics, anomaly, and trend helpers
   requirements.txt          Python dependencies
   server.py                 Flask app entry point
 ```

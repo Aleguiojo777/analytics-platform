@@ -93,6 +93,6 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ## Files
 
 - `server.py` - Flask app entrypoint and API endpoints
-- `analytics_insights.py` - Standalone Python AI module (reference)
+- `services/analytics_insights.py` - Standalone Python AI module (reference)
 - `requirements.txt` - Python dependencies
 - `controllers/analytics_controller.py` - Python analytics endpoint logic

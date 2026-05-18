@@ -1,6 +1,6 @@
 import unittest
 
-from analytics_insights import analyze_anomalies_detailed, detect_anomalies, generate_executive_summary
+from services.analytics_insights import analyze_anomalies_detailed, detect_anomalies, generate_executive_summary
 from controllers.db_controller import build_connection_string, friendly_connection_error
 from utils.table_filter import filter_sensitive_tables, table_analytics_profile
 

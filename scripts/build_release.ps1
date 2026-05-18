@@ -1,4 +1,4 @@
-﻿param(
+param(
   [string]$Version = "dev",
   [string]$OutputDir = "release"
 )
@@ -18,7 +18,7 @@ if (Test-Path $staging) {
 New-Item -ItemType Directory -Path $staging | Out-Null
 
 $include = @(
-  "analytics_insights.py",
+  "services",
   "controllers",
   "frontend",
   "routes",

@@ -11,6 +11,7 @@ a = Analysis(
         ('controllers', 'controllers'),
         ('assets', 'assets'),
         ('utils', 'utils'),
+        ('services', 'services'),
         ('requirements.txt', '.'),
         ('.env.example', '.'),
     ],
