@@ -1,4 +1,4 @@
-﻿/* DataLens - Dark Industrial Analytics Theme */
+/* DataLens - Dark Industrial Analytics Theme */
 
 :root {
   --bg-base:       #0a0b0e;
@@ -940,8 +940,8 @@ body {
 
 .anomaly-detail-panel {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
   padding: 12px;
   background: var(--bg-hover);
   border: 1px solid var(--border);
@@ -950,6 +950,31 @@ body {
   color: var(--text-secondary);
   font-size: 12px;
   margin-bottom: 12px;
+}
+
+.anomaly-detail-item {
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.anomaly-detail-item span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-family: var(--font-head);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.anomaly-detail-item strong {
+  display: block;
+  color: var(--text-secondary);
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .anomaly-action-group {

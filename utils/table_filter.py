@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 SENSITIVE_KEYWORDS = [
     'user', 'password', 'auth', 'credential', 'token',
     'admin', 'role', 'permission', 'secret', 'session',
-    'audit', 'log', 'key', 'hash', 'salt'
+    'audit', 'log', 'hash', 'salt'
 ]
 TABLE_NAME_PATTERN = re.compile(r'^[\w.\-]+$')
 NUMERIC_TYPES = {

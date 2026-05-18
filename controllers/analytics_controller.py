@@ -55,12 +55,41 @@ def text_value_sql(column_sql: str, data_type: str) -> str:
         return f"CAST({column_sql} AS NVARCHAR(4000))"
     return column_sql
 
-def load_category_profile(cursor, table_sql: str, text_cols: List[Dict[str, Any]], total_rows: int) -> List[Dict[str, Any]]:
+
+def _clean_text_expr(col_sql: str) -> str:
+    # Safe cleansing for analytics-only: trim + empty string => NULL
+    return f"NULLIF(LTRIM(RTRIM({col_sql})), '')"
+
+
+def _clean_numeric_expr(col_sql: str) -> str:
+    # Safe numeric cleansing for analytics-only: TRY_CONVERT to FLOAT
+    return f"TRY_CONVERT(FLOAT, {col_sql})"
+
+
+def analytics_value_sql(col: Dict[str, Any], cleaned_mode: bool) -> str:
+    col_sql = quote_identifier(col['COLUMN_NAME'])
+    dtype = str(col.get('DATA_TYPE') or '').lower()
+    if cleaned_mode and dtype in TEXT_TYPES:
+        return _clean_text_expr(text_value_sql(col_sql, dtype))
+    if cleaned_mode and dtype in NUMERIC_TYPES:
+        return _clean_numeric_expr(col_sql)
+    if dtype in ('text', 'ntext'):
+        return text_value_sql(col_sql, dtype)
+    return col_sql
+
+
+def numeric_value_sql(col: Dict[str, Any], cleaned_mode: bool) -> str:
+    col_sql = quote_identifier(col['COLUMN_NAME'])
+    if cleaned_mode:
+        return _clean_numeric_expr(col_sql)
+    return f"CAST({col_sql} AS FLOAT)"
+
+
+def load_category_profile(cursor, table_sql: str, text_cols: List[Dict[str, Any]], total_rows: int, cleaned_mode: bool = False) -> List[Dict[str, Any]]:
     profiles: List[Dict[str, Any]] = []
     for col in text_cols[:8]:
         col_name = col['COLUMN_NAME']
-        col_sql = quote_identifier(col_name)
-        value_sql = text_value_sql(col_sql, col.get('DATA_TYPE'))
+        value_sql = analytics_value_sql(col, cleaned_mode)
         cursor.execute(
             f"SELECT COUNT(DISTINCT {value_sql}) AS distinct_count, COUNT({value_sql}) AS filled_count "
             f"FROM {table_sql} "
@@ -97,14 +126,6 @@ def parse_requested_table(payload: Dict[str, Any]):
     return (conn_info, table_ref), None
 
 
-def _clean_text_expr(col_sql: str) -> str:
-    # Safe cleansing for analytics-only: trim + empty string => NULL
-    return f"NULLIF(LTRIM(RTRIM({col_sql})), '')"
-
-
-def _clean_numeric_expr(col_sql: str) -> str:
-    # Safe numeric cleansing for analytics-only: TRY_CONVERT to FLOAT
-    return f"TRY_CONVERT(FLOAT, {col_sql})"
 
 
 def get_table_analytics():
@@ -135,17 +156,11 @@ def get_table_analytics():
             cleaned_sample_rows = sample_rows
 
             if use_clean:
-                sample_cols = [c['COLUMN_NAME'] for c in columns]
                 select_exprs = []
                 for c in columns:
                     col_sql = quote_identifier(c['COLUMN_NAME'])
-                    dtype = str(c.get('DATA_TYPE') or '').lower()
-                    if dtype in ('varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'):
-                        select_exprs.append(f"{_clean_text_expr(col_sql)} AS {col_sql}")
-                    elif dtype in NUMERIC_TYPES:
-                        select_exprs.append(f"{_clean_numeric_expr(col_sql)} AS {col_sql}")
-                    else:
-                        select_exprs.append(col_sql)
+                    value_sql = analytics_value_sql(c, use_clean)
+                    select_exprs.append(f"{value_sql} AS {col_sql}" if value_sql != col_sql else col_sql)
 
                 cursor.execute(f"SELECT TOP 100 {', '.join(select_exprs)} FROM {table_sql}")
                 cleaned_sample_rows = rows_to_dicts(cursor, cursor.fetchall())
@@ -163,15 +178,15 @@ def get_table_analytics():
 
             numeric_stats = []
             for col in numeric_analysis_cols[:6]:
-                col_sql = quote_identifier(col['COLUMN_NAME'])
+                value_sql = numeric_value_sql(col, use_clean)
                 cursor.execute(
                     f"SELECT "
-                    f"MIN({col_sql}) AS min_val, "
-                    f"MAX({col_sql}) AS max_val, "
-                    f"AVG(CAST({col_sql} AS FLOAT)) AS avg_val, "
-                    f"SUM(CAST({col_sql} AS FLOAT)) AS sum_val "
+                    f"MIN({value_sql}) AS min_val, "
+                    f"MAX({value_sql}) AS max_val, "
+                    f"AVG({value_sql}) AS avg_val, "
+                    f"SUM({value_sql}) AS sum_val "
                     f"FROM {table_sql} "
-                    f"WHERE {col_sql} IS NOT NULL"
+                    f"WHERE {value_sql} IS NOT NULL"
                 )
                 row = cursor.fetchone()
                 numeric_stats.append({
@@ -184,8 +199,8 @@ def get_table_analytics():
 
             column_quality = []
             for col in columns[:30]:
-                col_sql = quote_identifier(col['COLUMN_NAME'])
-                cursor.execute(f"SELECT COUNT(*) FROM {table_sql} WHERE {col_sql} IS NULL")
+                value_sql = analytics_value_sql(col, use_clean)
+                cursor.execute(f"SELECT COUNT(*) FROM {table_sql} WHERE {value_sql} IS NULL")
                 null_count = cursor.fetchone()[0] or 0
                 column_quality.append({
                     'column': col['COLUMN_NAME'],
@@ -195,12 +210,11 @@ def get_table_analytics():
                 })
 
             category_data = None
-            category_profiles = load_category_profile(cursor, table_sql, text_cols, total_rows)
+            category_profiles = load_category_profile(cursor, table_sql, text_cols, total_rows, use_clean)
             if category_profiles:
                 text_col = category_profiles[0]['column']
-                text_type = next((col['DATA_TYPE'] for col in text_cols if col['COLUMN_NAME'] == text_col), '')
-                text_sql = quote_identifier(text_col)
-                value_sql = text_value_sql(text_sql, text_type)
+                text_col_meta = next((col for col in text_cols if col['COLUMN_NAME'] == text_col), None)
+                value_sql = analytics_value_sql(text_col_meta, use_clean) if text_col_meta else quote_identifier(text_col)
                 cursor.execute(
                     f"SELECT TOP 10 {value_sql} AS label, COUNT(*) AS item_count "
                     f"FROM {table_sql} "
@@ -217,20 +231,20 @@ def get_table_analytics():
             time_series_data = None
             if date_cols and numeric_analysis_cols:
                 date_col = date_cols[0]['COLUMN_NAME']
-                num_col = numeric_analysis_cols[0]['COLUMN_NAME']
                 date_sql = quote_identifier(date_col)
-                num_sql = quote_identifier(num_col)
+                num_col_meta = numeric_analysis_cols[0]
+                num_sql = numeric_value_sql(num_col_meta, use_clean)
                 cursor.execute(
                     f"SELECT TOP 30 CONVERT(VARCHAR(10), {date_sql}, 120) AS period, "
-                    f"SUM(CAST({num_sql} AS FLOAT)) AS total "
+                    f"SUM({num_sql}) AS total "
                     f"FROM {table_sql} "
-                    f"WHERE {date_sql} IS NOT NULL "
+                    f"WHERE {date_sql} IS NOT NULL AND {num_sql} IS NOT NULL "
                     f"GROUP BY CONVERT(VARCHAR(10), {date_sql}, 120) "
                     f"ORDER BY period"
                 )
                 time_series_data = {
                     'dateColumn': date_col,
-                    'valueColumn': num_col,
+                    'valueColumn': num_col_meta['COLUMN_NAME'],
                     'data': rows_to_dicts(cursor, cursor.fetchall())
                 }
 
@@ -250,7 +264,7 @@ def get_table_analytics():
                 'columnQuality': column_quality,
                 'completenessScore': completeness,
                 'profile': profile,
-                'sampleRows': sample_rows[:10]
+                'sampleRows': cleaned_sample_rows[:10] if use_clean else sample_rows[:10]
             })
     except Exception as error:
         return jsonify({'error': f'Analytics failed: {str(error)}'}), 500
@@ -285,7 +299,7 @@ def get_executive_summary():
             text_cols = [c for c in columns if c['DATA_TYPE'] in TEXT_TYPES]
 
             if not numeric_cols:
-                category_profiles = load_category_profile(cursor, table_sql, text_cols, total_rows)
+                category_profiles = load_category_profile(cursor, table_sql, text_cols, total_rows, use_clean)
                 summary = {
                     'keyMetrics': [],
                     'criticalAnomalies': [],
@@ -309,14 +323,14 @@ def get_executive_summary():
 
             analyses: List[Dict[str, Any]] = []
             for col in numeric_cols[:10]:
-                col_sql = quote_identifier(col['COLUMN_NAME'])
+                value_sql = numeric_value_sql(col, use_clean)
                 order_clause = ''
                 if date_cols:
                     date_sql = quote_identifier(date_cols[0]['COLUMN_NAME'])
                     order_clause = f" ORDER BY {date_sql}"
                 cursor.execute(
-                    f"SELECT TOP 1000 {col_sql} FROM {table_sql} "
-                    f"WHERE {col_sql} IS NOT NULL"
+                    f"SELECT TOP 1000 {value_sql} AS analysis_value FROM {table_sql} "
+                    f"WHERE {value_sql} IS NOT NULL"
                     f"{order_clause}"
                 )
                 values: List[float] = []

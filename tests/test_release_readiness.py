@@ -1,7 +1,7 @@
-﻿import unittest
+import unittest
 
 from analytics_insights import analyze_anomalies_detailed, detect_anomalies, generate_executive_summary
-from utils.table_filter import table_analytics_profile
+from utils.table_filter import filter_sensitive_tables, table_analytics_profile
 
 
 class TableAnalyticsProfileTests(unittest.TestCase):
@@ -30,6 +30,11 @@ class TableAnalyticsProfileTests(unittest.TestCase):
         self.assertEqual(profile['numericMeasureCount'], 1)
         self.assertEqual(profile['dateColumnCount'], 1)
         self.assertEqual(profile['textDimensionCount'], 1)
+
+    def test_business_key_tables_are_not_treated_as_sensitive(self):
+        table_names = ['dbo.ProductKeyMetrics']
+
+        self.assertEqual(filter_sensitive_tables(table_names), table_names)
 
 
 class InsightRecommendationTests(unittest.TestCase):

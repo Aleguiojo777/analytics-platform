@@ -1,4 +1,4 @@
-﻿/* DataLens - Frontend Application Logic */
+/* DataLens - Frontend Application Logic */
 
 // State
 let connInfo = null;          // DB connection details
@@ -821,12 +821,12 @@ function displayColumnAnalysis(analysis) {
     const topDetail = analysis.anomaliesDetailed[0];
     html += '<h4 style="margin-top: 16px; margin-bottom: 8px;">How To Investigate The Main Anomaly</h4>';
     html += `<div class="anomaly-detail-panel">
-      <div><strong>Severity:</strong> ${escHtml(topDetail.severity)} ${escHtml(topDetail.type)} anomaly</div>
-      <div><strong>Row position:</strong> ${escHtml(Number(topDetail.rowIndex) + 1)}</div>
-      <div><strong>Actual value:</strong> ${fmt(topDetail.actualValue)}</div>
-      <div><strong>Expected range:</strong> ${escHtml(topDetail.expectedRange)}</div>
-      <div><strong>Impact:</strong> ${escHtml(topDetail.impact || topDetail.deviation)}</div>
-      <div><strong>Surrounding average:</strong> ${fmt(topDetail.surroundingAverage)}</div>
+      <div class="anomaly-detail-item"><span>Severity</span><strong>${escHtml(topDetail.severity)} ${escHtml(topDetail.type)} anomaly</strong></div>
+      <div class="anomaly-detail-item"><span>Row position</span><strong>${escHtml(Number(topDetail.rowIndex) + 1)}</strong></div>
+      <div class="anomaly-detail-item"><span>Actual value</span><strong>${fmt(topDetail.actualValue)}</strong></div>
+      <div class="anomaly-detail-item"><span>Expected range</span><strong>${escHtml(topDetail.expectedRange)}</strong></div>
+      <div class="anomaly-detail-item"><span>Impact</span><strong>${escHtml(topDetail.impact || topDetail.deviation)}</strong></div>
+      <div class="anomaly-detail-item"><span>Surrounding average</span><strong>${fmt(topDetail.surroundingAverage)}</strong></div>
     </div>`;
     html += renderActionList('Likely causes', topDetail.likelyCauses);
     html += renderActionList('Validation checks', topDetail.validationChecks);
