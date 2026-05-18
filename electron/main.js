@@ -1,11 +1,12 @@
 const { app, BrowserWindow, dialog, shell } = require('electron');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
 const DEFAULT_PORT = 3000;
 const START_TIMEOUT_MS = 30000;
+const DEPENDENCY_STAMP = '.datalens-dependencies';
 let mainWindow;
 let backendProcess;
 let backendOutput = [];
@@ -22,29 +23,106 @@ function appRoot() {
   return app.isPackaged ? path.join(process.resourcesPath, 'app') : path.join(__dirname, '..');
 }
 
+function pythonEnvironmentRoot() {
+  return app.isPackaged ? app.getPath('userData') : appRoot();
+}
+
 function backendScriptPath() {
   return path.join(appRoot(), 'server.py');
 }
 
+function localPythonPath() {
+  const root = pythonEnvironmentRoot();
+  return process.platform === 'win32'
+    ? path.join(root, '.venv', 'Scripts', 'python.exe')
+    : path.join(root, '.venv', 'bin', 'python');
+}
+
+function runCommand(command, args, options = {}) {
+  const { cwd = appRoot(), ...spawnOptions } = options;
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: 'utf8',
+    windowsHide: true,
+    ...spawnOptions
+  });
+
+  if (result.stdout) appendBackendOutput(result.stdout);
+  if (result.stderr) appendBackendOutput(result.stderr);
+
+  if (result.error) throw result.error;
+  if (result.status !== 0) {
+    const detail = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+    throw new Error(`${command} ${args.join(' ')} failed${detail ? `\n${detail}` : ''}`);
+  }
+}
+
+function requirementsStampPath() {
+  return path.join(pythonEnvironmentRoot(), '.venv', DEPENDENCY_STAMP);
+}
+
+function dependenciesAreCurrent(requirementsPath, stampPath) {
+  if (!fs.existsSync(requirementsPath) || !fs.existsSync(stampPath)) return false;
+
+  const requirementsTime = fs.statSync(requirementsPath).mtimeMs;
+  const stampTime = fs.statSync(stampPath).mtimeMs;
+  return stampTime >= requirementsTime;
+}
+
+function pythonBootstrapCandidates() {
+  if (process.env.DATALENS_PYTHON) return [process.env.DATALENS_PYTHON];
+  return process.platform === 'win32' ? ['py', 'python'] : ['python3', 'python'];
+}
+
+function createVirtualEnvironment(venvPython) {
+  if (fs.existsSync(venvPython)) return;
+
+  fs.mkdirSync(pythonEnvironmentRoot(), { recursive: true });
+
+  const errors = [];
+  for (const python of pythonBootstrapCandidates()) {
+    try {
+      const args = python === 'py' ? ['-3', '-m', 'venv', '.venv'] : ['-m', 'venv', '.venv'];
+      runCommand(python, args, { cwd: pythonEnvironmentRoot() });
+      if (fs.existsSync(venvPython)) return;
+    } catch (error) {
+      errors.push(`${python}: ${error.message}`);
+    }
+  }
+
+  throw new Error(`Could not create a Python virtual environment. Tried: ${errors.join('; ')}`);
+}
+
+function ensurePythonEnvironment() {
+  const requirementsPath = path.join(appRoot(), 'requirements.txt');
+  const venvPython = localPythonPath();
+
+  createVirtualEnvironment(venvPython);
+
+  const stampPath = requirementsStampPath();
+  if (process.env.DATALENS_SKIP_PIP === '1' || dependenciesAreCurrent(requirementsPath, stampPath)) {
+    return venvPython;
+  }
+
+  runCommand(venvPython, ['-m', 'pip', 'install', '--upgrade', 'pip']);
+  runCommand(venvPython, ['-m', 'pip', 'install', '-r', requirementsPath]);
+
+  fs.writeFileSync(stampPath, new Date().toISOString(), 'utf8');
+  return venvPython;
+}
+
 function pythonCandidates() {
-  const root = appRoot();
   const candidates = [];
 
   if (process.env.DATALENS_PYTHON) candidates.push(process.env.DATALENS_PYTHON);
 
-  if (process.platform === 'win32') {
-    const localPython = path.join(root, '.venv', 'Scripts', 'python.exe');
-    if (fs.existsSync(localPython)) candidates.push(localPython);
-    candidates.push('py');
-    candidates.push('python');
-  } else {
-    const localPython = path.join(root, '.venv', 'bin', 'python');
-    if (fs.existsSync(localPython)) candidates.push(localPython);
-    candidates.push('python3');
-    candidates.push('python');
-  }
+  const localPython = localPythonPath();
+  if (fs.existsSync(localPython)) candidates.push(localPython);
 
-  return candidates;
+  if (process.platform === 'win32') candidates.push('py', 'python');
+  else candidates.push('python3', 'python');
+
+  return [...new Set(candidates)];
 }
 
 function waitForServer(url, timeoutMs = START_TIMEOUT_MS) {
@@ -129,10 +207,16 @@ async function spawnBackend(port) {
     CORS_ORIGINS: `http://localhost:${port},http://127.0.0.1:${port}`
   };
 
-  const candidates = pythonCandidates();
   const errors = [];
   backendOutput = [];
 
+  try {
+    ensurePythonEnvironment();
+  } catch (error) {
+    appendBackendOutput(error.message);
+  }
+
+  const candidates = pythonCandidates();
   for (const python of candidates) {
     try {
       await spawnCandidate(python, script, env);

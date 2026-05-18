@@ -105,10 +105,10 @@ try {
 }
 
 if ($OneFile.IsPresent) {
-    $exeSrc = Join-Path $scriptDir "dist\DataLens.exe"
+    $exeSrc = Join-Path $distPath "DataLens.exe"
     if (Test-Path $exeSrc) { Copy-Item -Path $exeSrc -Destination $releaseDir -Force }
 } else {
-    $dirSrc = Join-Path $scriptDir "dist\DataLens"
+    $dirSrc = Join-Path $distPath "DataLens"
     if (Test-Path $dirSrc) {
         $dest = Join-Path $releaseDir "DataLens"
         if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
