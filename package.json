@@ -1,0 +1,52 @@
+﻿{
+  "name": "datalens-desktop",
+  "version": "1.0.0",
+  "description": "DataLens desktop shell for the local Python analytics platform.",
+  "main": "electron/main.js",
+  "author": "DataLens",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "desktop": "electron .",
+    "dist": "electron-builder --win nsis --x64",
+    "pack": "electron-builder --dir"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.datalens.analytics",
+    "productName": "DataLens",
+    "asar": false,
+    "files": [
+      "analytics_insights.py",
+      "controllers/**/*",
+      "electron/**/*",
+      "frontend/**/*",
+      "routes/**/*",
+      "utils/**/*",
+      "assets/**/*",
+      "requirements.txt",
+      "server.py",
+      "README.md",
+      "PYTHON_SETUP.md",
+      "run-datalens.bat"
+    ],
+    "directories": {
+      "output": "release/electron"
+    },
+    "win": {
+      "icon": "assets/datalens.ico",
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

@@ -50,7 +50,31 @@ The app runs on `http://localhost:3000` by default.
 
 ## Desktop Release
 
-This project is intended to be distributed as a local desktop-style ZIP from GitHub Releases.
+This project can run as either a local browser app or an Electron desktop app.
+
+### Electron desktop app
+
+Install Node dependencies:
+
+```powershell
+npm.cmd install
+```
+
+Run the Electron desktop shell during development:
+
+```powershell
+npm.cmd run desktop
+```
+
+Build a Windows installer:
+
+```powershell
+npm.cmd run dist
+```
+
+Electron launches the local Python Flask backend and opens DataLens in a desktop window. The target PC still needs Python 3.9+ and the Microsoft ODBC Driver 18 for SQL Server unless you also bundle the Python backend with PyInstaller.
+
+### ZIP fallback package
 
 Build a local release package:
 
