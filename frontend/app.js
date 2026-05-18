@@ -3,6 +3,7 @@
 // State
 let connInfo = null;          // DB connection details
 let availableTables = [];
+let cleanedMode = false;
 let selectedTable = null;
 let analyticsData = null;
 let charts = {};              // Chart.js instances
@@ -187,7 +188,7 @@ async function loadAnalytics(tableName) {
   document.getElementById('dashTableName').textContent = `Table: ${tableLabel(tableName)}`;
 
   try {
-    const res = await post('/api/analytics/table', { connInfo, tableName: tablePayload(tableName) });
+    const res = await post('/api/analytics/table', { connInfo, tableName: tablePayload(tableName), cleanedMode });
     loading.classList.add('d-none');
 
     if (res.error) {
@@ -470,6 +471,11 @@ function tableLabel(table) {
   if (!table) return '';
   if (typeof table === 'string') return table;
   return table.label || [table.schema, table.name].filter(Boolean).join('.') || String(table);
+}
+
+function onCleanedModeToggle() {
+  const el = document.getElementById('cleanedModeToggle');
+  cleanedMode = !!el?.checked;
 }
 
 function tablePayload(table) {

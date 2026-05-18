@@ -31,6 +31,7 @@ def is_identifier_safe(identifier: str) -> bool:
 def quote_identifier(identifier: str) -> str:
     if not is_identifier_safe(identifier):
         raise ValueError('Invalid SQL identifier.')
+    # SQL Server bracket quoting: ] escapes to ]] 
     return f"[{identifier.replace(']', ']]')}]"
 
 

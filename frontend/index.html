@@ -131,6 +131,11 @@
     <section class="panel" id="panelDashboard">
       <div class="panel-header">
         <h2>Analytics Dashboard</h2>
+        <div class="panel-inline-actions" style="margin-top:12px">
+          <label class="toggle-label" title="Derive cleaned values (preview) for analytics calculations only">
+            <input type="checkbox" id="cleanedModeToggle" onchange="onCleanedModeToggle()" /> Cleaned Mode (preview)
+          </label>
+        </div>
         <p id="dashTableName">Select a table to view analytics</p>
         <div class="panel-actions">
           <button class="btn-secondary-action" onclick="refreshSelectedTable()"><i class="bi bi-arrow-clockwise"></i><span>Refresh</span></button>

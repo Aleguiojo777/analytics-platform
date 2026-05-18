@@ -97,6 +97,16 @@ def parse_requested_table(payload: Dict[str, Any]):
     return (conn_info, table_ref), None
 
 
+def _clean_text_expr(col_sql: str) -> str:
+    # Safe cleansing for analytics-only: trim + empty string => NULL
+    return f"NULLIF(LTRIM(RTRIM({col_sql})), '')"
+
+
+def _clean_numeric_expr(col_sql: str) -> str:
+    # Safe numeric cleansing for analytics-only: TRY_CONVERT to FLOAT
+    return f"TRY_CONVERT(FLOAT, {col_sql})"
+
+
 def get_table_analytics():
     payload = request.get_json(force=True, silent=True) or {}
     parsed, error_response = parse_requested_table(payload)
@@ -117,6 +127,28 @@ def get_table_analytics():
             columns = load_columns(cursor, table_ref)
             cursor.execute(f"SELECT TOP 100 * FROM {table_sql}")
             sample_rows = rows_to_dicts(cursor, cursor.fetchall())
+            
+            # Cleaned analytics mode (preview): derive cleaned values in SELECT without modifying base tables
+            # Text columns: trim and convert empty string to NULL
+            # Numeric columns: TRY_CONVERT to FLOAT to avoid cast failures
+            use_clean = bool(payload.get('cleanedMode'))
+            cleaned_sample_rows = sample_rows
+
+            if use_clean:
+                sample_cols = [c['COLUMN_NAME'] for c in columns]
+                select_exprs = []
+                for c in columns:
+                    col_sql = quote_identifier(c['COLUMN_NAME'])
+                    dtype = str(c.get('DATA_TYPE') or '').lower()
+                    if dtype in ('varchar', 'nvarchar', 'char', 'nchar', 'text', 'ntext'):
+                        select_exprs.append(f"{_clean_text_expr(col_sql)} AS {col_sql}")
+                    elif dtype in NUMERIC_TYPES:
+                        select_exprs.append(f"{_clean_numeric_expr(col_sql)} AS {col_sql}")
+                    else:
+                        select_exprs.append(col_sql)
+
+                cursor.execute(f"SELECT TOP 100 {', '.join(select_exprs)} FROM {table_sql}")
+                cleaned_sample_rows = rows_to_dicts(cursor, cursor.fetchall())
 
             profile = table_analytics_profile(table_ref['label'], columns, total_rows)
             if not profile['usable']:
