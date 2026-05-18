@@ -473,10 +473,16 @@ function tableLabel(table) {
   return table.label || [table.schema, table.name].filter(Boolean).join('.') || String(table);
 }
 
-function onCleanedModeToggle() {
+async function onCleanedModeToggle() {
   const el = document.getElementById('cleanedModeToggle');
   cleanedMode = !!el?.checked;
+
+  // If a table is already selected, immediately refresh dashboard data
+  if (selectedTable) {
+    await loadAnalytics(selectedTable);
+  }
 }
+
 
 function tablePayload(table) {
   if (!table || typeof table === 'string') return table;
@@ -523,7 +529,8 @@ async function loadAIInsights(tableName) {
   loading.classList.remove('d-none');
 
   try {
-    const res = await post('/api/analytics/executive-summary', { connInfo, tableName: tablePayload(tableName) });
+    const res = await post('/api/analytics/executive-summary', { connInfo, tableName: tablePayload(tableName), cleanedMode });
+
     loading.classList.add('d-none');
 
     if (res.error) {

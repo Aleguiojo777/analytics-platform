@@ -258,6 +258,8 @@ def get_table_analytics():
 
 def get_executive_summary():
     payload = request.get_json(force=True, silent=True) or {}
+    use_clean = bool(payload.get('cleanedMode'))
+
     parsed, error_response = parse_requested_table(payload)
     if error_response:
         return error_response
