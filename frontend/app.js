@@ -629,6 +629,13 @@ function renderAIInsights(data) {
   if (summary.dataQualityScore !== undefined) {
     html += `<p><strong>Data Quality Score:</strong> ${escHtml(summary.dataQualityScore)}%</p>`;
   }
+  if (summary.narrativeText) {
+    html += `<div class="narrative-text">
+      <p><strong>Narrative:</strong></p>
+      <pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">${escHtml(summary.narrativeText)}</pre>
+    </div>`;
+  }
+
   if (summary.keyMetrics && summary.keyMetrics.length > 0) {
     html += `<p><strong>Top ${summary.keyMetrics.length} Metrics:</strong></p>`;
     html += '<ul style="margin-left: 16px;">';

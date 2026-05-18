@@ -352,7 +352,51 @@ def get_executive_summary():
                 })
 
             summary = generate_executive_summary(analyses)
+
+            # Rule-based “LLM by scratch” narrative (deterministic text generation; no external model)
+            if summary is not None:
+                narrative_lines: List[str] = []
+                dq = summary.get('dataQualityScore')
+                if dq is not None:
+                    narrative_lines.append(f"Data quality score is {dq}% based on anomaly rate and severity.")
+
+                key = summary.get('keyMetrics') or []
+                if key:
+                    top = key[0]
+                    narrative_lines.append(
+                        f"Most variable metric: {top.get('column')} has an average of {top.get('value')} "
+                        f"(range {top.get('range')}, variation {top.get('variation')})."
+                    )
+
+                critical = summary.get('criticalAnomalies') or []
+                if critical:
+                    top_anom = critical[0]
+                    narrative_lines.append(
+                        f"Suspicious areas detected: {top_anom.get('column')} shows {top_anom.get('count')} critical anomalies. "
+                        "Review the detailed column analysis for likely causes and validation checks."
+                    )
+                else:
+                    narrative_lines.append("No critical anomalies detected; focus on moderate outliers and trend changes if present.")
+
+                trends = summary.get('trends') or []
+                if trends:
+                    t = trends[0]
+                    direction = t.get('direction')
+                    narrative_lines.append(
+                        f"Trend signal: {t.get('column')} is trending {direction} (strength: {t.get('strength')}, confidence: {t.get('confidence')}). "
+                        "Confirm the drivers in the time context and operational events."
+                    )
+
+                recs = summary.get('recommendations') or []
+                if recs:
+                    narrative_lines.append("Next recommended actions:")
+                    for r in recs[:4]:
+                        narrative_lines.append(f"- {r}")
+
+                summary['narrativeText'] = "\n".join(narrative_lines)
+
             return jsonify({
+
                 'tableName': table_ref['label'],
                 'tableRef': {'schema': table_ref['schema'], 'name': table_ref['name'], 'label': table_ref['label']},
                 'columnCount': len(numeric_cols),
