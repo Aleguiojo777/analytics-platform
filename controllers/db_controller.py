@@ -59,7 +59,7 @@ def build_connection_string(conn_info: Dict[str, Any]) -> str:
 
     server_target = f'{server},{port}' if port else server
     driver = os.getenv('ODBC_DRIVER', 'ODBC Driver 18 for SQL Server')
-    trust_server = 'Yes' if encrypt or trust_cert else 'No'
+    trust_server = 'Yes' if trust_cert else 'No'
 
     return (
         f'DRIVER={odbc_value(driver)};'
@@ -77,6 +77,21 @@ def open_connection(conn_info: Dict[str, Any]) -> pyodbc.Connection:
     conn_str = build_connection_string(conn_info)
     return pyodbc.connect(conn_str, autocommit=True)
 
+def friendly_connection_error(error: Exception) -> str:
+    message = str(error).lower()
+    if 'certificate chain was issued by an authority that is not trusted' in message:
+        return (
+            'The server certificate is not trusted. For local or test databases, '
+            'turn on "Trust Server Certificate" and try again. For production, '
+            'ask your admin to install a trusted SQL Server certificate.'
+        )
+    if 'login failed' in message:
+        return 'Login failed. Check your username, password, and database access.'
+    if 'server was not found' in message or 'network-related' in message:
+        return 'Could not reach the SQL Server. Check the server name, port, and network connection.'
+    if 'timeout' in message:
+        return 'The connection timed out. Check that SQL Server is running and reachable.'
+    return 'Connection failed. Check the server details and try again.'
 
 def convert_value(value: Any) -> Any:
     if value is None:
@@ -182,4 +197,4 @@ def connect():
     except ValueError as error:
         return jsonify({'error': str(error)}), 400
     except Exception as error:
-        return jsonify({'error': f'Connection failed: {str(error)}'}), 500
+        return jsonify({'error': friendly_connection_error(error)}), 500
