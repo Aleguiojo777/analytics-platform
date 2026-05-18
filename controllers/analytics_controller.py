@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 
+import pyodbc
 from flask import jsonify, request
 
 from services.analytics_insights import (
@@ -22,6 +23,9 @@ from utils.table_filter import (
     quote_identifier,
     table_analytics_profile,
 )
+from utils.validators import validate_table_request, ValidationError as ValidatorError
+from utils.error_handler import handle_app_error, handle_database_error, ForbiddenError, NotFoundError
+from utils.config import Config
 
 
 
@@ -112,62 +116,70 @@ def load_category_profile(cursor, table_sql: str, text_cols: List[Dict[str, Any]
     return sorted(profiles, key=lambda item: item['score'], reverse=True)
 
 def parse_requested_table(payload: Dict[str, Any]):
+    """Parse and validate table request payload."""
     try:
-        table_ref = parse_table_reference(payload.get('tableName', ''))
-    except ValueError:
-        return None, (jsonify({'error': 'Invalid table name.'}), 400)
+        conn_info, table_name, cleaned_mode = validate_table_request(payload)
+    except ValidatorError as e:
+        return None, (jsonify({'error': e.message}), 400)
+    
+    try:
+        table_ref = parse_table_reference(table_name)
+    except ValueError as e:
+        return None, (jsonify({'error': str(e)}), 400)
 
-    conn_info = payload.get('connInfo')
-    if not conn_info or not table_ref['name']:
-        return None, (jsonify({'error': 'connInfo and tableName are required.'}), 400)
     if not filter_sensitive_tables([table_ref['label']]):
-        return None, (jsonify({'error': 'Access to this table is not allowed.'}), 403)
+        raise ForbiddenError('Access to this table is not allowed.')
 
-    return (conn_info, table_ref), None
-
-
+    return (conn_info, table_ref, cleaned_mode), None
 
 
+
+
+@handle_app_error
 def get_table_analytics():
+    """Retrieve comprehensive analytics for a specific table."""
     payload = request.get_json(force=True, silent=True) or {}
     parsed, error_response = parse_requested_table(payload)
     if error_response:
         return error_response
-    conn_info, table_ref = parsed
+    conn_info, table_ref, use_clean = parsed
 
     try:
         with open_connection(conn_info) as connection:
             cursor = connection.cursor()
             if not table_exists(cursor, table_ref):
-                return jsonify({'error': 'Selected table was not found.'}), 404
+                raise NotFoundError('Selected table was not found.')
 
             table_sql = table_ref['quoted']
             cursor.execute(f"SELECT COUNT(*) AS total FROM {table_sql}")
             total_rows = cursor.fetchone()[0] or 0
+            
+            if total_rows == 0:
+                return jsonify({'warning': 'Table is empty. Analytics will be limited.', 'totalRows': 0})
 
             columns = load_columns(cursor, table_ref)
-            cursor.execute(f"SELECT TOP 100 * FROM {table_sql}")
+            if not columns:
+                raise ValueError('Table has no columns.')
+            
+            cursor.execute(f"SELECT TOP {Config.MAX_SAMPLE_ROWS} * FROM {table_sql}")
             sample_rows = rows_to_dicts(cursor, cursor.fetchall())
             
             # Cleaned analytics mode (preview): derive cleaned values in SELECT without modifying base tables
-            # Text columns: trim and convert empty string to NULL
-            # Numeric columns: TRY_CONVERT to FLOAT to avoid cast failures
-            use_clean = bool(payload.get('cleanedMode'))
             cleaned_sample_rows = sample_rows
 
-            if use_clean:
+            if use_clean and Config.ENABLE_CLEANED_MODE:
                 select_exprs = []
                 for c in columns:
                     col_sql = quote_identifier(c['COLUMN_NAME'])
                     value_sql = analytics_value_sql(c, use_clean)
                     select_exprs.append(f"{value_sql} AS {col_sql}" if value_sql != col_sql else col_sql)
 
-                cursor.execute(f"SELECT TOP 100 {', '.join(select_exprs)} FROM {table_sql}")
+                cursor.execute(f"SELECT TOP {Config.MAX_SAMPLE_ROWS} {', '.join(select_exprs)} FROM {table_sql}")
                 cleaned_sample_rows = rows_to_dicts(cursor, cursor.fetchall())
 
             profile = table_analytics_profile(table_ref['label'], columns, total_rows)
             if not profile['usable']:
-                return jsonify({'error': f"Selected table is not analytics-ready: {profile['reason']}."}), 422
+                raise ValueError(f"Selected table is not analytics-ready: {profile['reason']}.")
 
             numeric_cols = [c for c in columns if c['DATA_TYPE'] in NUMERIC_TYPES]
             date_cols = [c for c in columns if c['DATA_TYPE'] in DATE_TYPES]
@@ -177,7 +189,7 @@ def get_table_analytics():
             numeric_analysis_cols = numeric_analysis_cols if numeric_analysis_cols else numeric_cols
 
             numeric_stats = []
-            for col in numeric_analysis_cols[:6]:
+            for col in numeric_analysis_cols[:Config.MAX_NUMERIC_COLUMNS]:
                 value_sql = numeric_value_sql(col, use_clean)
                 cursor.execute(
                     f"SELECT "
@@ -189,13 +201,14 @@ def get_table_analytics():
                     f"WHERE {value_sql} IS NOT NULL"
                 )
                 row = cursor.fetchone()
-                numeric_stats.append({
-                    'column': col['COLUMN_NAME'],
-                    'min': float(row.min_val) if row.min_val is not None else 0,
-                    'max': float(row.max_val) if row.max_val is not None else 0,
-                    'avg': round(float(row.avg_val), 2) if row.avg_val is not None else 0,
-                    'sum': round(float(row.sum_val), 2) if row.sum_val is not None else 0
-                })
+                if row:
+                    numeric_stats.append({
+                        'column': col['COLUMN_NAME'],
+                        'min': float(row.min_val) if row.min_val is not None else 0,
+                        'max': float(row.max_val) if row.max_val is not None else 0,
+                        'avg': round(float(row.avg_val), 2) if row.avg_val is not None else 0,
+                        'sum': round(float(row.sum_val), 2) if row.sum_val is not None else 0
+                    })
 
             column_quality = []
             for col in columns[:30]:
@@ -210,7 +223,7 @@ def get_table_analytics():
                 })
 
             category_data = None
-            category_profiles = load_category_profile(cursor, table_sql, text_cols, total_rows, use_clean)
+            category_profiles = load_category_profile(cursor, table_sql, text_cols[:Config.MAX_TEXT_COLUMNS], total_rows, use_clean)
             if category_profiles:
                 text_col = category_profiles[0]['column']
                 text_col_meta = next((col for col in text_cols if col['COLUMN_NAME'] == text_col), None)
@@ -266,40 +279,45 @@ def get_table_analytics():
                 'profile': profile,
                 'sampleRows': cleaned_sample_rows[:10] if use_clean else sample_rows[:10]
             })
-    except Exception as error:
-        return jsonify({'error': f'Analytics failed: {str(error)}'}), 500
+    except pyodbc.Error as error:
+        return handle_database_error(error)
 
 
+@handle_app_error
 def get_executive_summary():
+    """Generate AI-powered executive summary with anomalies and trends."""
     payload = request.get_json(force=True, silent=True) or {}
-    use_clean = bool(payload.get('cleanedMode'))
 
     parsed, error_response = parse_requested_table(payload)
     if error_response:
         return error_response
-    conn_info, table_ref = parsed
+    conn_info, table_ref, use_clean = parsed
 
     try:
         with open_connection(conn_info) as connection:
             cursor = connection.cursor()
             if not table_exists(cursor, table_ref):
-                return jsonify({'error': 'Selected table was not found.'}), 404
+                raise NotFoundError('Selected table was not found.')
 
             table_sql = table_ref['quoted']
             cursor.execute(f"SELECT COUNT(*) AS total FROM {table_sql}")
             total_rows = cursor.fetchone()[0] or 0
+            
+            if total_rows == 0:
+                return jsonify({'warning': 'Table is empty. Cannot generate summary.', 'tableCount': 0})
 
             columns = load_columns(cursor, table_ref)
             profile = table_analytics_profile(table_ref['label'], columns, total_rows)
             if not profile['usable']:
-                return jsonify({'error': f"Selected table is not analytics-ready: {profile['reason']}."}), 422
+                raise ValueError(f"Selected table is not analytics-ready: {profile['reason']}.")
+                
             numeric_cols = [c for c in columns if c['DATA_TYPE'] in NUMERIC_TYPES]
             numeric_cols = [c for c in numeric_cols if not is_id_column(c['COLUMN_NAME'])] or numeric_cols
             date_cols = [c for c in columns if c['DATA_TYPE'] in DATE_TYPES]
             text_cols = [c for c in columns if c['DATA_TYPE'] in TEXT_TYPES]
 
             if not numeric_cols:
-                category_profiles = load_category_profile(cursor, table_sql, text_cols, total_rows, use_clean)
+                category_profiles = load_category_profile(cursor, table_sql, text_cols[:Config.MAX_TEXT_COLUMNS], total_rows, use_clean)
                 summary = {
                     'keyMetrics': [],
                     'criticalAnomalies': [],
@@ -328,8 +346,9 @@ def get_executive_summary():
                 if date_cols:
                     date_sql = quote_identifier(date_cols[0]['COLUMN_NAME'])
                     order_clause = f" ORDER BY {date_sql}"
+                    
                 cursor.execute(
-                    f"SELECT TOP 1000 {value_sql} AS analysis_value FROM {table_sql} "
+                    f"SELECT TOP {Config.MAX_TABLE_RESULTS} {value_sql} AS analysis_value FROM {table_sql} "
                     f"WHERE {value_sql} IS NOT NULL"
                     f"{order_clause}"
                 )
@@ -343,7 +362,7 @@ def get_executive_summary():
                     except (TypeError, ValueError):
                         continue
 
-                if not values:
+                if not values or len(values) < Config.MIN_VALUES_FOR_ANOMALY_DETECTION:
                     continue
 
                 stats = {
@@ -354,9 +373,17 @@ def get_executive_summary():
                     'median': round(median(values), 2),
                     'stdDev': round(std_dev(values), 2)
                 }
-                anomalies = detect_anomalies(values)
-                anomalies_detailed = analyze_anomalies_detailed(col['COLUMN_NAME'], anomalies, values, stats)
-                trend = analyze_trend(values)
+                
+                anomalies = []
+                if Config.ENABLE_ANOMALY_DETECTION:
+                    anomalies = detect_anomalies(values, Config.ANOMALY_Z_SCORE_THRESHOLD)
+                    
+                anomalies_detailed = analyze_anomalies_detailed(col['COLUMN_NAME'], anomalies, values, stats) if anomalies else []
+                
+                trend = None
+                if Config.ENABLE_TREND_ANALYSIS:
+                    trend = analyze_trend(values)
+                    
                 analyses.append({
                     'column': col['COLUMN_NAME'],
                     'stats': stats,
@@ -365,59 +392,29 @@ def get_executive_summary():
                     'trend': trend
                 })
 
-            summary = generate_executive_summary(analyses)
+            key_metrics = [a for a in analyses if a['anomalies']][:3]
+            critical_anomalies = [a['anomaliesDetailed'] for a in analyses if a['anomaliesDetailed']]
+            critical_anomalies = [item for sublist in critical_anomalies for item in sublist][:5]
+            trends = [a['trend'] for a in analyses if a['trend']][:3]
 
-            # Rule-based “LLM by scratch” narrative (deterministic text generation; no external model)
-            if summary is not None:
-                narrative_lines: List[str] = []
-                dq = summary.get('dataQualityScore')
-                if dq is not None:
-                    narrative_lines.append(f"Data quality score is {dq}% based on anomaly rate and severity.")
-
-                key = summary.get('keyMetrics') or []
-                if key:
-                    top = key[0]
-                    narrative_lines.append(
-                        f"Most variable metric: {top.get('column')} has an average of {top.get('value')} "
-                        f"(range {top.get('range')}, variation {top.get('variation')})."
-                    )
-
-                critical = summary.get('criticalAnomalies') or []
-                if critical:
-                    top_anom = critical[0]
-                    narrative_lines.append(
-                        f"Suspicious areas detected: {top_anom.get('column')} shows {top_anom.get('count')} critical anomalies. "
-                        "Review the detailed column analysis for likely causes and validation checks."
-                    )
-                else:
-                    narrative_lines.append("No critical anomalies detected; focus on moderate outliers and trend changes if present.")
-
-                trends = summary.get('trends') or []
-                if trends:
-                    t = trends[0]
-                    direction = t.get('direction')
-                    narrative_lines.append(
-                        f"Trend signal: {t.get('column')} is trending {direction} (strength: {t.get('strength')}, confidence: {t.get('confidence')}). "
-                        "Confirm the drivers in the time context and operational events."
-                    )
-
-                recs = summary.get('recommendations') or []
-                if recs:
-                    narrative_lines.append("Next recommended actions:")
-                    for r in recs[:4]:
-                        narrative_lines.append(f"- {r}")
-
-                summary['narrativeText'] = "\n".join(narrative_lines)
+            exec_summary = generate_executive_summary(analyses) if analyses else {
+                'summary': 'Unable to analyze - insufficient numeric data.',
+                'recommendations': ['Add numeric columns for better analysis.']
+            }
 
             return jsonify({
-
                 'tableName': table_ref['label'],
                 'tableRef': {'schema': table_ref['schema'], 'name': table_ref['name'], 'label': table_ref['label']},
-                'columnCount': len(numeric_cols),
+                'columnCount': len(columns),
                 'analyzedColumns': len(analyses),
-                'summary': summary,
+                'summary': exec_summary.get('summary', 'Analysis complete.'),
+                'recommendations': exec_summary.get('recommendations', []),
                 'profile': profile,
+                'keyMetrics': key_metrics,
+                'criticalAnomalies': critical_anomalies,
+                'trends': trends,
                 'detailedAnalysis': analyses
             })
-    except Exception as error:
-        return jsonify({'error': 'Failed to generate summary.', 'detail': str(error)}), 500
+    except pyodbc.Error as error:
+        return handle_database_error(error)
+

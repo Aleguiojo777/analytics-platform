@@ -8,6 +8,9 @@ import pyodbc
 from flask import jsonify, request
 
 from utils.table_filter import filter_sensitive_tables, normalize_boolean, table_analytics_profile, table_label
+from utils.validators import validate_connection_info, ValidationError as ValidatorError
+from utils.error_handler import handle_app_error, handle_database_error, DatabaseError
+from utils.config import Config
 
 
 MAX_FIELD_LENGTH = 256
@@ -94,6 +97,7 @@ def friendly_connection_error(error: Exception) -> str:
     return 'Connection failed. Check the server details and try again.'
 
 def convert_value(value: Any) -> Any:
+    """Convert database values to JSON-serializable types."""
     if value is None:
         return None
     if isinstance(value, decimal.Decimal):
@@ -104,6 +108,9 @@ def convert_value(value: Any) -> Any:
 
 
 def rows_to_dicts(cursor: pyodbc.Cursor, rows: List[Any]) -> List[Dict[str, Any]]:
+    """Convert database cursor rows to list of dictionaries."""
+    if not cursor.description:
+        return []
     columns = [column[0] for column in cursor.description]
     result: List[Dict[str, Any]] = []
     for row in rows:
@@ -111,28 +118,17 @@ def rows_to_dicts(cursor: pyodbc.Cursor, rows: List[Any]) -> List[Dict[str, Any]
     return result
 
 
+@handle_app_error
 def connect():
+    """Connect to SQL Server and retrieve available tables."""
     payload = request.get_json(force=True, silent=True) or {}
-    server = payload.get('server')
-    port = payload.get('port')
-    database = payload.get('database')
-    username = payload.get('username')
-    password = payload.get('password')
-    encrypt = payload.get('encrypt')
-    trust_cert = payload.get('trustCert')
-
-    if not server or not database or not username or not password:
-        return jsonify({'error': 'server, database, username, and password are required.'}), 400
-
-    conn_info = {
-        'server': server,
-        'port': port,
-        'database': database,
-        'username': username,
-        'password': password,
-        'encrypt': encrypt,
-        'trustCert': trust_cert
-    }
+    
+    # Validate connection info
+    try:
+        conn_info = validate_connection_info(payload)
+    except ValidatorError as e:
+        from utils.error_handler import error_response
+        return error_response(e.message, 400, 'VALIDATION_ERROR')
 
     try:
         with open_connection(conn_info) as connection:
@@ -158,6 +154,16 @@ def connect():
                 }
                 for row in cursor.fetchall()
             ]
+            
+            if not tables:
+                return jsonify({
+                    'message': f'Connected to "{conn_info["database"]}" successfully. No user tables found.',
+                    'database': conn_info['database'],
+                    'tables': [],
+                    'tableCount': 0,
+                    'filteredTableCount': 0
+                })
+            
             safe_labels = set(filter_sensitive_tables([table['label'] for table in tables]))
             safe_tables = [table for table in tables if table['label'] in safe_labels]
 
@@ -188,13 +194,11 @@ def connect():
                     })
 
             return jsonify({
-                'message': f'Connected to "{database}" successfully.',
-                'database': clean_text_field(database, 'database'),
+                'message': f'Connected to "{conn_info["database"]}" successfully.',
+                'database': conn_info['database'],
                 'tables': analytics_tables,
                 'tableCount': len(analytics_tables),
                 'filteredTableCount': max(len(tables) - len(analytics_tables), 0)
             })
-    except ValueError as error:
-        return jsonify({'error': str(error)}), 400
-    except Exception as error:
-        return jsonify({'error': friendly_connection_error(error)}), 500
+    except pyodbc.Error as error:
+        return handle_database_error(error)
