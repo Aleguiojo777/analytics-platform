@@ -1,100 +1,13 @@
-import os
 import decimal
 import datetime
-import re
 from typing import Any, Dict, List
 
-import pyodbc
 from flask import jsonify, request
 
-from utils.table_filter import filter_sensitive_tables, normalize_boolean, table_analytics_profile, table_label
+from utils.table_filter import filter_sensitive_tables, table_analytics_profile, table_label
 from utils.validators import validate_connection_info, ValidationError as ValidatorError
 from utils.error_handler import handle_app_error, handle_database_error, DatabaseError
-from utils.config import Config
-
-
-MAX_FIELD_LENGTH = 256
-SERVER_PATTERN = re.compile(r'^[A-Za-z0-9_.\\,\-:]+$')
-
-
-def clean_text_field(value: Any, field_name: str, max_length: int = MAX_FIELD_LENGTH) -> str:
-    text = str(value or '').strip()
-    if not text:
-        raise ValueError(f'{field_name} is required.')
-    if len(text) > max_length:
-        raise ValueError(f'{field_name} is too long.')
-    if any(ord(char) < 32 for char in text):
-        raise ValueError(f'{field_name} contains invalid characters.')
-    return text
-
-
-def clean_server(value: Any) -> str:
-    server = clean_text_field(value, 'server')
-    if ';' in server or not SERVER_PATTERN.fullmatch(server):
-        raise ValueError('server contains invalid characters.')
-    return server
-
-
-def clean_port(value: Any) -> str:
-    if value in (None, ''):
-        return ''
-    try:
-        port = int(str(value).strip())
-    except (TypeError, ValueError):
-        raise ValueError('port must be a number.')
-    if port < 1 or port > 65535:
-        raise ValueError('port must be between 1 and 65535.')
-    return str(port)
-
-
-def odbc_value(value: str) -> str:
-    return '{' + value.replace('}', '}}') + '}'
-
-
-def build_connection_string(conn_info: Dict[str, Any]) -> str:
-    server = clean_server(conn_info.get('server'))
-    port = clean_port(conn_info.get('port'))
-    database = clean_text_field(conn_info.get('database'), 'database')
-    username = clean_text_field(conn_info.get('username'), 'username')
-    password = clean_text_field(conn_info.get('password'), 'password', max_length=512)
-    encrypt = normalize_boolean(conn_info.get('encrypt'))
-    trust_cert = normalize_boolean(conn_info.get('trustCert'))
-
-    server_target = f'{server},{port}' if port else server
-    driver = os.getenv('ODBC_DRIVER', 'ODBC Driver 18 for SQL Server')
-    trust_server = 'Yes' if trust_cert else 'No'
-
-    return (
-        f'DRIVER={odbc_value(driver)};'
-        f'SERVER={odbc_value(server_target)};'
-        f'DATABASE={odbc_value(database)};'
-        f'UID={odbc_value(username)};'
-        f'PWD={odbc_value(password)};'
-        f"Encrypt={'Yes' if encrypt else 'No'};"
-        f'TrustServerCertificate={trust_server};'
-        f'Connection Timeout=10;'
-    )
-
-
-def open_connection(conn_info: Dict[str, Any]) -> pyodbc.Connection:
-    conn_str = build_connection_string(conn_info)
-    return pyodbc.connect(conn_str, autocommit=True)
-
-def friendly_connection_error(error: Exception) -> str:
-    message = str(error).lower()
-    if 'certificate chain was issued by an authority that is not trusted' in message:
-        return (
-            'The server certificate is not trusted. For local or test databases, '
-            'turn on "Trust Server Certificate" and try again. For production, '
-            'ask your admin to install a trusted SQL Server certificate.'
-        )
-    if 'login failed' in message:
-        return 'Login failed. Check your username, password, and database access.'
-    if 'server was not found' in message or 'network-related' in message:
-        return 'Could not reach the SQL Server. Check the server name, port, and network connection.'
-    if 'timeout' in message:
-        return 'The connection timed out. Check that SQL Server is running and reachable.'
-    return 'Connection failed. Check the server details and try again.'
+from utils.db_adapter import get_database_adapter
 
 def convert_value(value: Any) -> Any:
     """Convert database values to JSON-serializable types."""
@@ -107,7 +20,7 @@ def convert_value(value: Any) -> Any:
     return value
 
 
-def rows_to_dicts(cursor: pyodbc.Cursor, rows: List[Any]) -> List[Dict[str, Any]]:
+def rows_to_dicts(cursor, rows: List[Any]) -> List[Dict[str, Any]]:
     """Convert database cursor rows to list of dictionaries."""
     if not cursor.description:
         return []
@@ -118,12 +31,86 @@ def rows_to_dicts(cursor: pyodbc.Cursor, rows: List[Any]) -> List[Dict[str, Any]
     return result
 
 
+
+def cursor_rows_to_dicts(cursor, rows: List[Any]) -> List[Dict[str, Any]]:
+    """Convert rows from pyodbc or mysql.connector using cursor metadata."""
+    if not cursor.description:
+        return []
+    columns = [column[0] for column in cursor.description]
+    result: List[Dict[str, Any]] = []
+    for row in rows:
+        item: Dict[str, Any] = {}
+        for index, column in enumerate(columns):
+            item[column] = convert_value(row[index])
+        result.append(item)
+    return result
+
+
+def normalize_row_count(value: Any) -> int:
+    """Use 1 for unknown counts so metadata-only discovery does not hide tables."""
+    if value is None:
+        return 1
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return 1
+    return max(count, 1)
+
+
+def discover_tables(cursor, adapter) -> List[Dict[str, Any]]:
+    """Read table metadata using the selected database adapter."""
+    cursor.execute(adapter.get_tables_query())
+    table_rows = cursor_rows_to_dicts(cursor, cursor.fetchall())
+    tables: List[Dict[str, Any]] = []
+    for row in table_rows:
+        schema = row.get('TABLE_SCHEMA')
+        name = row.get('TABLE_NAME')
+        if not schema or not name:
+            continue
+        tables.append({
+            'schema': schema,
+            'name': name,
+            'label': table_label(schema, name),
+            'rowCount': normalize_row_count(row.get('ROW_COUNT'))
+        })
+    return tables
+
+
+def discover_columns(cursor, adapter) -> Dict[str, List[Dict[str, Any]]]:
+    """Read column metadata keyed by schema.table label."""
+    cursor.execute(adapter.get_columns_query())
+    columns_by_table: Dict[str, List[Dict[str, Any]]] = {}
+    for row in cursor_rows_to_dicts(cursor, cursor.fetchall()):
+        schema = row.get('TABLE_SCHEMA')
+        table_name = row.get('TABLE_NAME')
+        col_name = row.get('COLUMN_NAME')
+        data_type = row.get('DATA_TYPE')
+        if not schema or not table_name or not col_name:
+            continue
+        label = table_label(schema, table_name)
+        columns_by_table.setdefault(label, []).append({
+            'COLUMN_NAME': col_name,
+            'DATA_TYPE': str(data_type or '').lower()
+        })
+    return columns_by_table
+
+def open_connection(conn_info: Dict[str, Any]):
+    """
+    Open a connection to the database (SQL Server or MySQL based on DB_TYPE).
+    
+    For internal use - requires full connection_info dict with credentials.
+    For testing/scripts only - production code should use the /api/db/connect endpoint.
+    """
+    adapter = get_database_adapter()
+    return adapter.open_connection(conn_info)
+
+
 @handle_app_error
 def connect():
-    """Connect to SQL Server and retrieve available tables."""
+    """Connect to database and retrieve analytics-ready tables."""
     payload = request.get_json(force=True, silent=True) or {}
-    
-    # Validate connection info
+    db_type_requested = str(payload.get('dbType') or 'sqlserver').lower()
+
     try:
         conn_info = validate_connection_info(payload)
     except ValidatorError as e:
@@ -131,74 +118,102 @@ def connect():
         return error_response(e.message, 400, 'VALIDATION_ERROR')
 
     try:
-        with open_connection(conn_info) as connection:
-            cursor = connection.cursor()
-            cursor.execute(
-                "SELECT "
-                "s.name AS TABLE_SCHEMA, "
-                "t.name AS TABLE_NAME, "
-                "COALESCE(SUM(CASE WHEN p.index_id IN (0, 1) THEN p.rows ELSE 0 END), 0) AS ROW_COUNT "
-                "FROM sys.tables t "
-                "JOIN sys.schemas s ON s.schema_id = t.schema_id "
-                "LEFT JOIN sys.partitions p ON p.object_id = t.object_id "
-                "WHERE t.is_ms_shipped = 0 "
-                "GROUP BY s.name, t.name "
-                "ORDER BY s.name, t.name"
-            )
-            tables = [
-                {
-                    'schema': row.TABLE_SCHEMA,
-                    'name': row.TABLE_NAME,
-                    'label': table_label(row.TABLE_SCHEMA, row.TABLE_NAME),
-                    'rowCount': int(row.ROW_COUNT or 0)
-                }
-                for row in cursor.fetchall()
-            ]
-            
-            if not tables:
-                return jsonify({
-                    'message': f'Connected to "{conn_info["database"]}" successfully. No user tables found.',
-                    'database': conn_info['database'],
-                    'tables': [],
-                    'tableCount': 0,
-                    'filteredTableCount': 0
-                })
-            
-            safe_labels = set(filter_sensitive_tables([table['label'] for table in tables]))
-            safe_tables = [table for table in tables if table['label'] in safe_labels]
+        adapter = get_database_adapter(db_type_requested)
+    except Exception as error:
+        from utils.error_handler import error_response
+        return error_response(str(error), 400, 'UNSUPPORTED_DATABASE')
 
-            cursor.execute(
-                "SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE "
-                "FROM INFORMATION_SCHEMA.COLUMNS "
-                "ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION"
-            )
-            columns_by_table: Dict[str, List[Dict[str, Any]]] = {}
-            for row in cursor.fetchall():
-                label = table_label(row.TABLE_SCHEMA, row.TABLE_NAME)
-                columns_by_table.setdefault(label, []).append({
-                    'COLUMN_NAME': row.COLUMN_NAME,
-                    'DATA_TYPE': row.DATA_TYPE
-                })
+    try:
+        connection = adapter.open_connection(conn_info)
+    except Exception as error:
+        friendly_msg = adapter.friendly_connection_error(error)
+        return handle_database_error(error, friendly_msg)
 
-            analytics_tables = []
-            for table in safe_tables:
-                profile = table_analytics_profile(
-                    table['label'],
-                    columns_by_table.get(table['label'], []),
-                    table['rowCount']
-                )
-                if profile['usable']:
-                    analytics_tables.append({
-                        **table,
-                        'profile': profile
-                    })
+    try:
+        cursor = connection.cursor()
 
+        try:
+            tables = discover_tables(cursor, adapter)
+            columns_by_table = discover_columns(cursor, adapter)
+        except Exception as discovery_error:
             return jsonify({
-                'message': f'Connected to "{conn_info["database"]}" successfully.',
+                'message': f'Connected to "{conn_info["database"]}" successfully, but table discovery failed.',
                 'database': conn_info['database'],
-                'tables': analytics_tables,
-                'tableCount': len(analytics_tables),
-                'filteredTableCount': max(len(tables) - len(analytics_tables), 0)
+                'connected': True,
+                'warning': 'Connected, but DataLens could not read table metadata. Grant access to INFORMATION_SCHEMA.TABLES and INFORMATION_SCHEMA.COLUMNS, then try again.',
+                'discoveryError': str(discovery_error),
+                'tables': [],
+                'tableCount': 0,
+                'filteredTableCount': 0
             })
-    except pyodbc.Error as error:
-        return handle_database_error(error)
+
+        if not tables:
+            return jsonify({
+                'message': f'Connected to "{conn_info["database"]}" successfully. No user tables found.',
+                'database': conn_info['database'],
+                'connected': True,
+                'tables': [],
+                'tableCount': 0,
+                'filteredTableCount': 0
+            })
+
+        safe_labels = set(filter_sensitive_tables([table['label'] for table in tables]))
+        safe_tables = [table for table in tables if table['label'] in safe_labels]
+
+        profiled_tables = []
+        analytics_ready_count = 0
+        for table in safe_tables:
+            profile = table_analytics_profile(
+                table['label'],
+                columns_by_table.get(table['label'], []),
+                table['rowCount']
+            )
+            if profile['usable']:
+                analytics_ready_count += 1
+            profiled_tables.append({
+                **table,
+                'analyticsReady': profile['usable'],
+                'profile': profile
+            })
+
+        return jsonify({
+            'message': f'Connected to "{conn_info["database"]}" successfully.',
+            'database': conn_info['database'],
+            'connected': True,
+            'tables': profiled_tables,
+            'tableCount': analytics_ready_count,
+            'analyticsReadyCount': analytics_ready_count,
+            'rawTableCount': len(tables),
+            'safeTableCount': len(profiled_tables),
+            'filteredTableCount': max(len(tables) - len(safe_tables), 0)
+        })
+    except Exception as error:
+        friendly_msg = adapter.friendly_connection_error(error)
+        return handle_database_error(error, friendly_msg)
+    finally:
+        try:
+            connection.close()
+        except Exception:
+            pass
+
+# Backwards compatibility wrappers for tests
+def build_connection_string(conn_info: Dict[str, Any]) -> str:
+    """
+    Build SQL Server connection string.
+    
+    Backwards compatibility wrapper - delegates to SQLServerAdapter.
+    """
+    from utils.db_adapter import SQLServerAdapter
+    adapter = SQLServerAdapter()
+    return adapter.build_connection_string(conn_info)
+
+
+def friendly_connection_error(error: Exception) -> str:
+    """
+    Convert SQL Server error to friendly message.
+    
+    Backwards compatibility wrapper - delegates to SQLServerAdapter.
+    """
+    from utils.db_adapter import SQLServerAdapter
+    adapter = SQLServerAdapter()
+    return adapter.friendly_connection_error(error)

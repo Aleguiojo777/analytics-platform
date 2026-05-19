@@ -470,6 +470,74 @@ body {
   border-bottom: 1px solid var(--border);
 }
 .connect-card-header i { color: var(--accent); }
+.connect-card-header-inline {
+  justify-content: space-between;
+  gap: 12px;
+}
+.connect-card-header-inline > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.db-type-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.db-type-inline select {
+  min-width: 128px;
+  height: 32px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 5px 28px 5px 9px;
+}
+.db-type-inline select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.smart-mode-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.smart-mode-select i { color: var(--accent); }
+.smart-mode-select select {
+  min-width: 210px;
+  height: 34px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 6px 28px 6px 9px;
+}
+.smart-mode-select select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+@media (max-width: 560px) {
+  .connect-card-header-inline {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .db-type-inline,
+  .db-type-inline select {
+    width: 100%;
+  }
+}
 
 .form-label-custom {
   display: block;
@@ -536,6 +604,15 @@ body {
 }
 .table-item:hover { background: var(--bg-hover); border-color: var(--border-light); color: var(--text-primary); }
 .table-item.selected { background: var(--accent-dim); border-color: var(--accent-glow); color: var(--accent); }
+.table-item.table-item-disabled {
+  cursor: not-allowed;
+  opacity: .72;
+}
+.table-item.table-item-disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
 .table-item i { font-size: 14px; opacity: .7; }
 
 .table-item-main {
@@ -568,6 +645,22 @@ body {
   font-size: 11px;
 }
 
+.table-health-pill {
+  margin-left: auto;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border-light);
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+}
+.table-health-pill.excellent { color: var(--accent); border-color: #00e5a055; background: #00e5a012; }
+.table-health-pill.good { color: var(--accent2); border-color: #4d9fff55; background: #4d9fff12; }
+.table-health-pill.fair { color: var(--accent3); border-color: #ffd16655; background: #ffd16612; }
+.table-health-pill.blocked { color: #ff6b6b; border-color: #ff6b6b55; background: #ff6b6b12; }
 /* STATS ROW */
 .stats-row {
   display: grid;
@@ -758,7 +851,7 @@ body {
 .empty-state i { font-size: 48px; opacity: .3; }
 .empty-state p { font-size: 14px; }
 
-/* AI INSIGHTS */
+/* SMART INSIGHTS */
 .insight-card {
   background: var(--bg-raised);
   border: 1px solid var(--border);
@@ -817,6 +910,44 @@ body {
 }
 
 .insight-summary li:last-child {
+  border-bottom: none;
+}
+
+.insight-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.report-section-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+.report-section {
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent2);
+  border-radius: var(--radius-sm);
+  padding: 13px 14px;
+}
+.report-section h4 {
+  margin: 0 0 8px;
+  color: var(--text-primary);
+  font-family: var(--font-head);
+  font-size: 13px;
+  font-weight: 700;
+}
+.report-section ul {
+  margin: 0;
+}
+.report-section li {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.45;
+}
+.report-section li:last-child {
   border-bottom: none;
 }
 

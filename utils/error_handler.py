@@ -127,9 +127,10 @@ def handle_app_error(f):
     return wrapper
 
 
-def handle_database_error(original_error: Exception) -> Tuple[Dict[str, Any], int]:
+def handle_database_error(original_error: Exception, friendly_msg: str = None) -> Tuple[Dict[str, Any], int]:
     """Handle database-related errors."""
-    friendly_msg = get_db_error_message(original_error)
+    if friendly_msg is None:
+        friendly_msg = get_db_error_message(original_error)
     error = DatabaseError(friendly_msg, original_error)
     log_error(original_error, 'database operation')
     return error_response(error.message, error.status_code, error.error_code)

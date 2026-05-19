@@ -7,12 +7,97 @@ let cleanedMode = false;
 let selectedTable = null;
 let analyticsData = null;
 let charts = {};              // Chart.js instances
+let dbType = 'sqlserver';     // Database type (sqlserver or mysql)
+let insightMode = 'executive';
+let smartInsightsResult = null;
 
 // Init
 window.addEventListener('DOMContentLoaded', () => {
+  loadDatabaseConfig();
   showApp();
 });
 
+async function loadDatabaseConfig() {
+  try {
+    const res = await fetch('/api/db/config');
+    const data = await res.json();
+    dbType = data.dbType || 'sqlserver';
+    document.getElementById('dbTypeSelector').value = dbType;
+    updateFormForDatabaseType();
+  } catch (e) {
+    console.error('Failed to load database config:', e);
+  }
+}
+
+function onDatabaseTypeChange() {
+  dbType = document.getElementById('dbTypeSelector').value;
+  updateFormForDatabaseType();
+  resetLoadedData();
+  showPanel('connect');
+}
+
+function updateFormForDatabaseType() {
+  const isMySQL = dbType === 'mysql';
+  const defaultPort = isMySQL ? 3306 : 1433;
+  const dbLabel = isMySQL ? 'MySQL' : 'SQL Server';
+  const userPlaceholder = isMySQL ? 'root' : 'sa';
+  
+  // Update form title and labels
+  document.getElementById('dbTypeLabel').textContent = `${dbLabel} Details`;
+  
+  // Set default port (only if it's still the old default)
+  const portInput = document.getElementById('dbPort');
+  if (portInput.value == 1433 || portInput.value == 3306) {
+    portInput.value = defaultPort;
+  }
+  
+  // Update placeholder text
+  document.getElementById('dbUser').placeholder = userPlaceholder;
+  
+  const serverField = document.getElementById('dbServer');
+  serverField.placeholder = isMySQL ? 'localhost' : 'localhost or 192.168.1.10';
+  
+  // Hide/show SQL Server specific options
+  const headerCopy = document.querySelector('#panelConnect .panel-header p');
+  if (headerCopy) {
+    headerCopy.textContent = `Enter your ${dbLabel} credentials to get started`;
+  }
+
+  const sqlServerOptions = document.getElementById('sqlServerOptions');
+  if (sqlServerOptions) {
+    sqlServerOptions.style.display = isMySQL ? 'none' : 'flex';
+  }
+}
+
+function resetLoadedData() {
+  connInfo = null;
+  availableTables = [];
+  selectedTable = null;
+  analyticsData = null;
+  window.smartDetailedAnalysis = null;
+  smartInsightsResult = null;
+
+  Object.values(charts).forEach(c => c.destroy());
+  charts = {};
+
+  document.getElementById('tableListCard').style.display = 'none';
+  document.getElementById('tableList').innerHTML = '';
+  document.getElementById('tableCountBadge').textContent = '0';
+  document.getElementById('dbBadge').classList.add('d-none');
+  document.getElementById('dbBadgeText').textContent = 'Not connected';
+  document.getElementById('dashContent').classList.add('d-none');
+  document.getElementById('dashLoading').classList.add('d-none');
+  document.getElementById('dashEmpty').classList.remove('d-none');
+  document.querySelector('#dashEmpty p').textContent = 'No table selected. Go to Connect and click a table.';
+  document.getElementById('dashTableName').textContent = 'Select a table to view analytics';
+  document.getElementById('dataTableWrap').innerHTML = '';
+  document.getElementById('dataEmpty').classList.remove('d-none');
+  document.getElementById('insightsContent').classList.add('d-none');
+  document.getElementById('insightsLoading').classList.add('d-none');
+  document.getElementById('insightsEmpty').classList.remove('d-none');
+  document.querySelector('#insightsEmpty p').textContent = 'No table selected. Connect and select a table to see Smart Insights.';
+  resetSmartInsightCards();
+}
 function showApp() {
   document.getElementById('appScreen').classList.remove('d-none');
   document.getElementById('appScreen').style.display = 'flex';
@@ -32,7 +117,7 @@ function showPanel(name) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
   const panelMap = { connect: 'panelConnect', dashboard: 'panelDashboard', insights: 'panelInsights', data: 'panelData' };
-  const titleMap = { connect: 'Connect to Database', dashboard: 'Analytics Dashboard', insights: 'AI Insights', data: 'Data Preview' };
+  const titleMap = { connect: 'Connect to Database', dashboard: 'Analytics Dashboard', insights: 'Smart Insights', data: 'Data Preview' };
 
   const panel = document.getElementById(panelMap[name]);
   if (panel) panel.classList.add('active');
@@ -50,9 +135,9 @@ function showPanel(name) {
     document.getElementById('sidebar').classList.remove('mobile-open');
   }
 
-  // Load AI insights when panel is opened
+  // Load Smart Insights when panel is opened
   if (name === 'insights' && selectedTable) {
-    loadAIInsights(selectedTable);
+    loadSmartInsights(selectedTable);
   }
 }
 
@@ -76,6 +161,7 @@ async function doConnect() {
   const password = document.getElementById('dbPass').value;
   const encrypt  = document.getElementById('dbEncrypt').checked;
   const trustCert= document.getElementById('dbTrustCert').checked;
+  const dbTypeVal = document.getElementById('dbTypeSelector')?.value || dbType;
   const errEl    = document.getElementById('connectError');
   const sucEl    = document.getElementById('connectSuccess');
 
@@ -89,7 +175,7 @@ async function doConnect() {
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner" style="width:18px;height:18px;border-width:2px;margin:0 auto"></div>';
 
-  connInfo = { server, port, database, username, password, encrypt, trustCert };
+  connInfo = { server, port, database, username, password, encrypt, trustCert, dbType: dbTypeVal };
 
   try {
     const res = await post('/api/db/connect', connInfo);
@@ -98,17 +184,22 @@ async function doConnect() {
 
     if (res.error) return showError(errEl, res.error);
 
-    availableTables = res.tables;
+    availableTables = res.tables || [];
+    const readyCount = Number(res.analyticsReadyCount ?? res.tableCount ?? 0);
+    const safeCount = Number(res.safeTableCount ?? availableTables.length);
     const filtered = Number(res.filteredTableCount || 0);
-    const filteredText = filtered ? ` (${filtered} hidden because they are not analytics-ready)` : '';
-    showSuccess(sucEl, `Connected to "${res.database}" - ${res.tableCount} analytics-ready table(s) available${filteredText}`);
-
+    const rawCount = Number(res.rawTableCount ?? (safeCount + filtered));
+    const hiddenText = filtered ? `, ${filtered} sensitive table(s) hidden` : '';
+    const warningText = res.warning ? ` ${res.warning}${res.discoveryError ? ` Details: ${res.discoveryError}` : ''}` : '';
+    const countText = rawCount > 0
+      ? `${readyCount} ready of ${safeCount} visible table(s)${hiddenText}`
+      : 'no user tables found';
+    showSuccess(sucEl, `Connected to "${res.database}" - ${countText}.${warningText}`);
     // Show DB badge in topbar
     const badge = document.getElementById('dbBadge');
     badge.classList.remove('d-none');
-    document.getElementById('dbBadgeText').textContent = `${res.database} (${res.tableCount} ready tables)`;
-
-    renderTableList(res.tables);
+    document.getElementById('dbBadgeText').textContent = `${res.database} (${readyCount} ready tables)`;
+    renderTableList(availableTables);
   } catch (e) {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-lightning-charge-fill"></i><span>Connect & Fetch Tables</span>';
@@ -126,8 +217,9 @@ function renderTableList(tables) {
   const badge = document.getElementById('tableCountBadge');
   const search = document.getElementById('tableSearch')?.value.trim().toLowerCase() || '';
   const filteredTables = tables.filter(t => tableLabel(t).toLowerCase().includes(search));
+  const readyVisible = filteredTables.filter(t => t.profile?.usable).length;
 
-  badge.textContent = filteredTables.length;
+  badge.textContent = `${readyVisible}/${filteredTables.length}`;
   list.innerHTML = '';
 
   if (filteredTables.length === 0) {
@@ -136,19 +228,28 @@ function renderTableList(tables) {
     filteredTables.forEach(t => {
       const item = document.createElement('div');
       const profile = t.profile || {};
+      const usable = profile.usable !== false;
+      const healthLabel = profile.healthLabel || (usable ? 'Ready' : 'Blocked');
       const details = [
         profile.rowCount !== undefined ? `${fmt(profile.rowCount)} rows` : null,
-        profile.suggestedView ? profile.suggestedView.replace('-', ' ') : null
+        profile.suggestedView ? profile.suggestedView.replace('-', ' ') : null,
+        profile.healthReasons?.[0] || profile.reason || null
       ].filter(Boolean).join(' / ');
-      item.className = tableLabel(t) === tableLabel(selectedTable) ? 'table-item selected' : 'table-item';
+      const selectedClass = tableLabel(t) === tableLabel(selectedTable) ? ' selected' : '';
+      item.className = `table-item${selectedClass}${usable ? '' : ' table-item-disabled'}`;
       item.innerHTML = `
-        <i class="bi bi-table"></i>
+        <i class="bi ${usable ? 'bi-table' : 'bi-shield-exclamation'}"></i>
         <span class="table-item-main">
           <span>${escHtml(tableLabel(t))}</span>
           ${details ? `<small>${escHtml(details)}</small>` : ''}
         </span>
+        <span class="table-health-pill ${healthClass(healthLabel)}" title="${escHtml(profile.recommendedAction || profile.reason || '')}">
+          ${escHtml(healthLabel)} ${profile.score !== undefined ? escHtml(profile.score) + '%' : ''}
+        </span>
       `;
-      item.addEventListener('click', () => selectTable(t, item));
+      if (usable) {
+        item.addEventListener('click', () => selectTable(t, item));
+      }
       list.appendChild(item);
     });
   }
@@ -156,6 +257,19 @@ function renderTableList(tables) {
   card.style.display = 'block';
 }
 
+function healthClass(label) {
+  const value = String(label || '').toLowerCase();
+  if (value.includes('excellent')) return 'excellent';
+  if (value.includes('good')) return 'good';
+  if (value.includes('fair')) return 'fair';
+  return 'blocked';
+}
+async function onInsightModeChange() {
+  insightMode = document.getElementById('insightModeSelector')?.value || 'executive';
+  if (selectedTable && document.getElementById('panelInsights')?.classList.contains('active')) {
+    await loadSmartInsights(selectedTable);
+  }
+}
 function filterTableList() {
   renderTableList(availableTables);
 }
@@ -181,14 +295,14 @@ async function loadAnalytics(tableName) {
   const content = document.getElementById('dashContent');
   const empty   = document.getElementById('dashEmpty');
 
-  resetAIInsightCards();
+  resetSmartInsightCards();
   content.classList.add('d-none');
   empty.classList.add('d-none');
   loading.classList.remove('d-none');
   document.getElementById('dashTableName').textContent = `Table: ${tableLabel(tableName)}`;
 
   try {
-    const res = await post('/api/analytics/table', { connInfo, tableName: tablePayload(tableName), cleanedMode });
+    const res = await post('/api/analytics/table', { connInfo, dbType: connInfo?.dbType || dbType, tableName: tablePayload(tableName), cleanedMode });
     loading.classList.add('d-none');
 
     if (res.error) {
@@ -517,19 +631,20 @@ function fmt(n) {
   return Number(n).toLocaleString();
 }
 
-// AI INSIGHTS
-async function loadAIInsights(tableName) {
+// SMART INSIGHTS
+async function loadSmartInsights(tableName) {
   const loading = document.getElementById('insightsLoading');
   const content = document.getElementById('insightsContent');
   const empty = document.getElementById('insightsEmpty');
 
-  resetAIInsightCards();
+  resetSmartInsightCards();
   content.classList.add('d-none');
   empty.classList.add('d-none');
   loading.classList.remove('d-none');
 
   try {
-    const res = await post('/api/analytics/executive-summary', { connInfo, tableName: tablePayload(tableName), cleanedMode });
+    insightMode = document.getElementById('insightModeSelector')?.value || insightMode || 'executive';
+    const res = await post('/api/analytics/executive-summary', { connInfo, dbType: connInfo?.dbType || dbType, tableName: tablePayload(tableName), cleanedMode, insightMode });
 
     loading.classList.add('d-none');
 
@@ -545,17 +660,18 @@ async function loadAIInsights(tableName) {
       return;
     }
 
-    renderAIInsights(res);
+    smartInsightsResult = res;
+    renderSmartInsights(res);
     content.classList.remove('d-none');
   } catch (e) {
-    console.error('AI Insights Error:', e);
+    console.error('Smart Insights Error:', e);
     loading.classList.add('d-none');
     empty.classList.remove('d-none');
-    empty.querySelector('p').textContent = 'Failed to generate AI insights.';
+    empty.querySelector('p').textContent = 'Failed to generate Smart Insights.';
   }
 }
 
-function resetAIInsightCards() {
+function resetSmartInsightCards() {
   ['summaryCard', 'metricsCard', 'anomaliesCard', 'trendsCard', 'columnAnalysisCard', 'recommendationsCard']
     .forEach(id => document.getElementById(id)?.classList.add('d-none'));
   ['summaryContent', 'metricsContent', 'anomaliesContent', 'trendsContent', 'columnAnalysisContent', 'recommendationsContent']
@@ -570,7 +686,7 @@ async function copyInsightsReport() {
 
   try {
     await navigator.clipboard.writeText(report);
-    flashAction('AI report copied to clipboard.');
+    flashAction('Smart Insights report copied to clipboard.');
   } catch (e) {
     console.error('Clipboard copy failed:', e);
     flashAction('Copy failed. Select the report text manually.');
@@ -578,28 +694,93 @@ async function copyInsightsReport() {
 }
 
 function buildInsightsReport() {
-  if (!window.aiDetailedAnalysis || !selectedTable) return '';
+  const data = smartInsightsResult;
+  if (!data?.summary || !selectedTable) return '';
 
+  const summary = data.summary;
+  const modeLabel = summary.modeLabel || insightModeLabel(summary.mode || insightMode);
   const lines = [
-    `DataLens AI Report`,
-    `Table: ${tableLabel(selectedTable)}`,
-    `Generated: ${new Date().toLocaleString()}`,
-    ''
+    `# DataLens Smart Insights Report`,
+    ``,
+    `**Table:** ${tableLabel(selectedTable)}`,
+    `**Mode:** ${modeLabel}`,
+    `**Generated:** ${new Date().toLocaleString()}`,
+    ``
   ];
 
-  const summaryText = document.getElementById('summaryContent')?.innerText.trim();
-  const trendsText = document.getElementById('trendsContent')?.innerText.trim();
-  const anomaliesText = document.getElementById('anomaliesContent')?.innerText.trim();
-  const recommendationsText = document.getElementById('recommendationsContent')?.innerText.trim();
+  if (summary.narrativeText) {
+    lines.push(`## Narrative`, summary.narrativeText, ``);
+  }
 
-  if (summaryText) lines.push('Executive Summary', summaryText, '');
-  if (trendsText) lines.push('Trends', trendsText, '');
-  if (anomaliesText) lines.push('Anomalies', anomaliesText, '');
-  if (recommendationsText) lines.push('Recommendations', recommendationsText, '');
+  (summary.reportSections || []).forEach(section => {
+    lines.push(`## ${section.title}`);
+    (section.items || []).forEach(item => lines.push(`- ${cleanInsightText(item)}`));
+    lines.push('');
+  });
+
+  if (summary.recommendations?.length) {
+    lines.push('## Recommendations');
+    summary.recommendations.forEach(item => lines.push(`- ${cleanInsightText(item)}`));
+    lines.push('');
+  }
 
   return lines.join('\n');
 }
 
+function exportInsightsMarkdown() {
+  const report = buildInsightsReport();
+  if (!report) return;
+
+  const blob = new Blob([report], { type: 'text/markdown;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const tableName = tableLabel(selectedTable).replace(/[^a-z0-9_-]+/gi, '_') || 'table';
+  const mode = (smartInsightsResult?.summary?.mode || insightMode || 'executive').replace(/[^a-z0-9_-]+/gi, '_');
+  a.href = url;
+  a.download = `${tableName}_${mode}_smart_insights.md`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  flashAction('Smart Insights report exported.');
+}
+async function exportInsightsPdf() {
+  if (!smartInsightsResult?.summary || !selectedTable) return;
+
+  try {
+    const res = await fetch('/api/analytics/export-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tableName: tableLabel(selectedTable),
+        summary: smartInsightsResult.summary,
+        profile: smartInsightsResult.profile || null
+      })
+    });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      flashAction(error.error || 'PDF export failed.');
+      return;
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const tableName = tableLabel(selectedTable).replace(/[^a-z0-9_-]+/gi, '_') || 'table';
+    const mode = (smartInsightsResult.summary.mode || insightMode || 'executive').replace(/[^a-z0-9_-]+/gi, '_');
+    a.href = url;
+    a.download = `${tableName}_${mode}_smart_insights.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    flashAction('Smart Insights PDF exported.');
+  } catch (e) {
+    console.error('PDF export failed:', e);
+    flashAction('PDF export failed. Is the server running?');
+  }
+}
 function flashAction(message) {
   const existing = document.getElementById('actionToast');
   if (existing) existing.remove();
@@ -617,15 +798,22 @@ function cleanInsightText(value) {
     .replace(/[\uD800-\uDFFF]/g, '')
     .trim();
 }
-function renderAIInsights(data) {
+function renderSmartInsights(data) {
   const summary = data.summary;
+  const mode = summary.mode || insightMode || 'executive';
+  const modeLabel = summary.modeLabel || insightModeLabel(mode);
 
   // Render Executive Summary
   const summaryCard = document.getElementById('summaryCard');
   const summaryContent = document.getElementById('summaryContent');
+  const summaryTitle = summaryCard.querySelector('h3');
+  if (summaryTitle) summaryTitle.innerHTML = `<i class="bi bi-briefcase-fill"></i> ${escHtml(modeLabel)}`;
   summaryCard.classList.remove('d-none');
 
   let html = '<div class="insight-summary">';
+  if (modeLabel) {
+    html += `<p><strong>Mode:</strong> ${escHtml(modeLabel)}</p>`;
+  }
   if (summary.dataQualityScore !== undefined) {
     html += `<p><strong>Data Quality Score:</strong> ${escHtml(summary.dataQualityScore)}%</p>`;
   }
@@ -636,30 +824,30 @@ function renderAIInsights(data) {
     </div>`;
   }
 
-  if (summary.keyMetrics && summary.keyMetrics.length > 0) {
-    html += `<p><strong>Top ${summary.keyMetrics.length} Metrics:</strong></p>`;
-    html += '<ul style="margin-left: 16px;">';
-    summary.keyMetrics.forEach(m => {
-      html += `
-        <li><strong>${escHtml(m.column)}</strong>: Avg ${escHtml(m.value)}
-            (Range: ${escHtml(m.range)}, Variation: ${escHtml(m.variation)})</li>
-      `;
+  if (summary.keyObservations && summary.keyObservations.length > 0) {
+    html += '<p><strong>Key Observations:</strong></p><ul style="margin-left: 16px;">';
+    summary.keyObservations.forEach(item => {
+      html += `<li>${escHtml(cleanInsightText(item))}</li>`;
     });
     html += '</ul>';
   }
-  if (summary.categoryMetrics && summary.categoryMetrics.length > 0) {
-    html += '<p><strong>Best Category Fields:</strong></p>';
-    html += '<ul style="margin-left: 16px;">';
-    summary.categoryMetrics.forEach(m => {
-      html += `<li><strong>${escHtml(m.column)}</strong>: ${escHtml(m.distinctCount)} distinct values, ${escHtml(m.coveragePercent)}% filled</li>`;
+
+  if (summary.reportSections && summary.reportSections.length > 0) {
+    html += '<div class="report-section-grid">';
+    summary.reportSections.forEach(section => {
+      html += `<section class="report-section"><h4>${escHtml(section.title)}</h4><ul>`;
+      (section.items || []).forEach(item => {
+        html += `<li>${escHtml(cleanInsightText(item))}</li>`;
+      });
+      html += '</ul></section>';
     });
-    html += '</ul>';
+    html += '</div>';
   }
   html += '</div>';
   summaryContent.innerHTML = html;
 
   // Render Key Metrics Cards
-  if (summary.keyMetrics && summary.keyMetrics.length > 0) {
+  if (modeAllowsCard(mode, 'metrics') && summary.keyMetrics && summary.keyMetrics.length > 0) {
     const metricsCard = document.getElementById('metricsCard');
     const metricsContent = document.getElementById('metricsContent');
     metricsCard.classList.remove('d-none');
@@ -681,7 +869,7 @@ function renderAIInsights(data) {
   }
 
   // Render Anomalies
-  if (summary.criticalAnomalies && summary.criticalAnomalies.length > 0) {
+  if (modeAllowsCard(mode, 'anomalies') && summary.criticalAnomalies && summary.criticalAnomalies.length > 0) {
     const anomaliesCard = document.getElementById('anomaliesCard');
     const anomaliesContent = document.getElementById('anomaliesContent');
     anomaliesCard.classList.remove('d-none');
@@ -700,7 +888,7 @@ function renderAIInsights(data) {
   }
 
   // Render Trends
-  if (summary.trends && summary.trends.length > 0) {
+  if (modeAllowsCard(mode, 'trends') && summary.trends && summary.trends.length > 0) {
     const trendsCard = document.getElementById('trendsCard');
     const trendsContent = document.getElementById('trendsContent');
     trendsCard.classList.remove('d-none');
@@ -723,7 +911,7 @@ function renderAIInsights(data) {
   }
 
   // Populate column selector for detailed analysis
-  if (data.detailedAnalysis && data.detailedAnalysis.length > 0) {
+  if (modeAllowsCard(mode, 'columns') && data.detailedAnalysis && data.detailedAnalysis.length > 0) {
     const selector = document.getElementById('columnSelector');
     data.detailedAnalysis.forEach(col => {
       const option = document.createElement('option');
@@ -741,7 +929,7 @@ function renderAIInsights(data) {
   }
 
   // Render Recommendations
-  if (summary.recommendations && summary.recommendations.length > 0) {
+  if (!summary.reportSections?.length && summary.recommendations && summary.recommendations.length > 0) {
     const recommendationsCard = document.getElementById('recommendationsCard');
     const recommendationsContent = document.getElementById('recommendationsContent');
     recommendationsCard.classList.remove('d-none');
@@ -758,10 +946,31 @@ function renderAIInsights(data) {
   }
 
   // Store detailed analysis for later use
-  window.aiDetailedAnalysis = data.detailedAnalysis;
+  window.smartDetailedAnalysis = data.detailedAnalysis;
 }
 
 
+function insightModeLabel(mode) {
+  const labels = {
+    executive: 'Executive Summary',
+    quality: 'Data Quality Review',
+    anomaly: 'Anomaly Investigation',
+    forecast: 'Forecast Readiness',
+    kpi: 'Business KPI Suggestions'
+  };
+  return labels[mode] || labels.executive;
+}
+
+function modeAllowsCard(mode, card) {
+  const visible = {
+    executive: ['metrics', 'anomalies', 'trends', 'columns'],
+    quality: [],
+    anomaly: ['anomalies', 'columns'],
+    forecast: ['trends'],
+    kpi: ['metrics']
+  };
+  return (visible[mode] || visible.executive).includes(card);
+}
 function renderActionList(title, items) {
   if (!items || items.length === 0) return '';
   return `
@@ -786,6 +995,15 @@ function displayColumnAnalysis(analysis) {
   html += `<div><strong>Median:</strong> ${fmt(analysis.stats.median)}</div>`;
   html += `<div><strong>Std Dev:</strong> ${fmt(analysis.stats.stdDev)}</div>`;
   html += '</div>';
+
+  if (analysis.insights && analysis.insights.length > 0) {
+    html += '<h4 style="margin-top: 12px; margin-bottom: 8px;">Insights</h4>';
+    html += '<ul style="margin-left: 16px; color: #cfd6e4;">';
+    analysis.insights.forEach(item => {
+      html += `<li>${escHtml(cleanInsightText(item))}</li>`;
+    });
+    html += '</ul>';
+  }
 
   // Trend Information
   if (analysis.trend) {
@@ -842,9 +1060,9 @@ function analyzeSelectedColumn() {
   const selector = document.getElementById('columnSelector');
   const columnName = selector.value;
 
-  if (!columnName || !window.aiDetailedAnalysis) return;
+  if (!columnName || !window.smartDetailedAnalysis) return;
 
-  const analysis = window.aiDetailedAnalysis.find(a => a.column === columnName);
+  const analysis = window.smartDetailedAnalysis.find(a => a.column === columnName);
   if (analysis) {
     displayColumnAnalysis(analysis);
   }

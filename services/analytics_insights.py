@@ -1,7 +1,7 @@
-﻿import math
+import math
 from typing import List, Dict, Any, Optional, Tuple
 
-# AI INSIGHTS FUNCTIONS
+# SMART INSIGHTS FUNCTIONS
 
 # Simple statistics helpers
 def mean(arr: List[float]) -> float:
@@ -399,7 +399,9 @@ def generate_executive_summary(numeric_stats: List[Dict[str, Any]]) -> Optional[
         'anomalyDetails': [],
         'trends': [],
         'recommendations': [],
-        'dataQualityScore': 0
+        'dataQualityScore': 0,
+        'keyObservations': [],
+        'narrativeText': ''
     }
     
     # Sort by variation (max - min)
@@ -478,7 +480,26 @@ def generate_executive_summary(numeric_stats: List[Dict[str, Any]]) -> Optional[
     anomaly_ratio = total_anomalies / total_values if total_values else 0
     quality_score = max(0, 100 - (anomaly_ratio * 100) - (critical_count * 10))
     summary['dataQualityScore'] = round(quality_score, 1)
-    
+
+    if summary['keyMetrics']:
+        lead_metric = summary['keyMetrics'][0]
+        summary['keyObservations'].append(
+            f"{lead_metric['column']} has the widest measured range ({lead_metric['range']}) with {lead_metric['variation']} variation."
+        )
+
+    if summary['criticalAnomalies']:
+        anomaly_columns = ', '.join(item['column'] for item in summary['criticalAnomalies'][:3])
+        summary['keyObservations'].append(f"Anomalies were detected in {anomaly_columns}; validate those source rows before relying on the KPI.")
+    else:
+        summary['keyObservations'].append('No anomaly cluster crossed the configured severity threshold in the analyzed sample.')
+
+    if summary['trends']:
+        trend_columns = ', '.join(f"{item['column']} ({item['direction']})" for item in summary['trends'][:3])
+        summary['keyObservations'].append(f"Time-based movement is visible for {trend_columns}.")
+    else:
+        summary['keyObservations'].append('No reliable time trend was detected; trend cards are shown only when date/time ordering is available.')
+
+    summary['narrativeText'] = ' '.join(summary['keyObservations'])
     return summary
 
 

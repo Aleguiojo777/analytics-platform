@@ -74,7 +74,7 @@ if __name__ == '__main__':
     logger.info(f'Debug Mode: {Config.DEBUG}')
     logger.info(f'CORS Origins: {Config.CORS_ORIGINS}')
     
-    print(f'🔍 DataLens Analytics Platform running on http://{Config.HOST}:{Config.PORT}')
+    print(f'DataLens Analytics Platform running on http://{Config.HOST}:{Config.PORT}')
 
     waitress = None
     if not Config.DEBUG:

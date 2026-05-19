@@ -40,6 +40,7 @@ class Config:
     DEBUG = get_env_bool('FLASK_DEBUG', False)
     
     # Database
+    DB_TYPE = get_env('DB_TYPE', 'sqlserver').lower()  # 'sqlserver' or 'mysql'
     ODBC_DRIVER = get_env('ODBC_DRIVER', 'ODBC Driver 18 for SQL Server')
     DB_CONNECTION_TIMEOUT = get_env_int('DB_CONNECTION_TIMEOUT', 10)
     

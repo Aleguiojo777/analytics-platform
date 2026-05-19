@@ -76,8 +76,17 @@ def validate_password(value: Any) -> str:
     return validate_string(value, 'password', max_length=MAX_PASSWORD_LENGTH)
 
 
-def validate_table_name(value: Any) -> str:
-    """Validate table name format (schema.table)."""
+def validate_table_name(value: Any) -> Any:
+    """Validate table name format (schema.table) or structured table reference."""
+    if isinstance(value, dict):
+        schema = validate_string(value.get('schema') or value.get('TABLE_SCHEMA') or '', 'tableName.schema', max_length=MAX_TABLE_NAME_LENGTH)
+        name = validate_string(value.get('name') or value.get('TABLE_NAME') or '', 'tableName.name', max_length=MAX_TABLE_NAME_LENGTH)
+        return {
+            'schema': schema,
+            'name': name,
+            'label': value.get('label') or f'{schema}.{name}'
+        }
+
     name = validate_string(value, 'tableName', max_length=MAX_TABLE_NAME_LENGTH)
     if '.' not in name:
         raise ValidationError('tableName must be in format "schema.table".')
@@ -85,7 +94,6 @@ def validate_table_name(value: Any) -> str:
     if len(parts) != 2 or not parts[0] or not parts[1]:
         raise ValidationError('tableName must be in format "schema.table".')
     return name
-
 
 def validate_boolean(value: Any) -> bool:
     """Validate and convert boolean input."""

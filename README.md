@@ -8,7 +8,7 @@ A Flask + Chart.js analytics dashboard for SQL Server. Connect to a database, br
 - SQL Server connection screen with schema-aware table discovery.
 - Searchable table list for faster desktop use.
 - Dashboard KPI cards, numeric charts, category distribution, time-series chart, and data completeness score.
-- AI-style statistical insights with anomaly detection, trend analysis, recommendations, and copyable report text.
+- Smart statistical insights with anomaly detection, trend analysis, recommendations, and copyable report text.
 - Data preview with CSV export for the current sample rows.
 - Local desktop launcher via `run-datalens.bat` for Windows users.
 ## Project Structure

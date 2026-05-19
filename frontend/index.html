@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -30,7 +30,7 @@
         <i class="bi bi-grid-3x3-gap-fill"></i><span>Dashboard</span>
       </a>
       <a class="nav-item" onclick="showPanel('insights')" id="navInsights">
-        <i class="bi bi-lightbulb-fill"></i><span>AI Insights</span>
+        <i class="bi bi-lightbulb-fill"></i><span>Smart Insights</span>
       </a>
       <a class="nav-item" onclick="showPanel('data')" id="navData">
         <i class="bi bi-table"></i><span>Data Table</span>
@@ -71,9 +71,16 @@
       </div>
 
       <div class="connect-grid">
-        <div class="connect-card">
-          <div class="connect-card-header">
-            <i class="bi bi-hdd-network-fill"></i> SQL Server Details
+        <div class="connect-card connect-card-main">
+          <div class="connect-card-header connect-card-header-inline">
+            <span><i class="bi bi-hdd-network-fill"></i> <span id="dbTypeLabel">SQL Server Details</span></span>
+            <label class="db-type-inline" title="Select your database system type">
+              <i class="bi bi-database"></i>
+              <select id="dbTypeSelector" aria-label="Database system type" onchange="onDatabaseTypeChange()">
+                <option value="sqlserver">SQL Server</option>
+                <option value="mysql">MySQL</option>
+              </select>
+            </label>
           </div>
 
           <div class="row g-3">
@@ -97,7 +104,7 @@
               <label class="form-label-custom">Password</label>
               <input type="password" id="dbPass" class="form-input-custom" placeholder="Password" maxlength="512"/>
             </div>
-            <div class="col-12 d-flex gap-4">
+            <div class="col-12 d-flex gap-4" id="sqlServerOptions">
               <label class="toggle-label">
                 <input type="checkbox" id="dbEncrypt"/> Encrypt Connection
               </label>
@@ -162,16 +169,29 @@
       </div>
     </section>
 
-    <!-- AI INSIGHTS PANEL -->
+    <!-- SMART INSIGHTS PANEL -->
     <section class="panel" id="panelInsights">
       <div class="panel-header">
-        <h2><i class="bi bi-lightbulb-fill"></i> AI-Powered Insights</h2>
+        <h2><i class="bi bi-lightbulb-fill"></i> Smart Insights</h2>
         <p>Executive summary and data intelligence for decision-making</p>
+        <div class="panel-actions">
+          <label class="smart-mode-select" title="Choose the kind of insight to generate">
+            <i class="bi bi-sliders"></i>
+            <span>Mode</span>
+            <select id="insightModeSelector" aria-label="Smart Insight mode" onchange="onInsightModeChange()">
+              <option value="executive">Executive Summary</option>
+              <option value="quality">Data Quality Review</option>
+              <option value="anomaly">Anomaly Investigation</option>
+              <option value="forecast">Forecast Readiness</option>
+              <option value="kpi">Business KPI Suggestions</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <div id="insightsLoading" class="loading-state d-none">
         <div class="spinner"></div>
-        <p>Analyzing data with AI...</p>
+        <p>Analyzing data...</p>
       </div>
 
       <div id="insightsContent" class="d-none">
@@ -179,7 +199,7 @@
         <div id="summaryCard" class="insight-card d-none">
           <div class="insight-card-header">
             <h3><i class="bi bi-briefcase-fill"></i> Executive Summary</h3>
-            <button class="btn-icon-action" onclick="copyInsightsReport()" title="Copy report"><i class="bi bi-clipboard"></i></button>
+            <div class="insight-card-actions"><button class="btn-icon-action" onclick="copyInsightsReport()" title="Copy report"><i class="bi bi-clipboard"></i></button><button class="btn-icon-action" onclick="exportInsightsPdf()" title="Export PDF"><i class="bi bi-filetype-pdf"></i></button></div>
           </div>
           <div id="summaryContent" class="insight-card-body"></div>
         </div>
@@ -230,7 +250,7 @@
 
       <div id="insightsEmpty" class="empty-state">
         <i class="bi bi-lightbulb"></i>
-        <p>No table selected. Connect and select a table to see AI insights.</p>
+        <p>No table selected. Connect and select a table to see Smart Insights.</p>
       </div>
     </section>
 
