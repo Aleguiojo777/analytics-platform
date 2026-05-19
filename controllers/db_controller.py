@@ -6,8 +6,9 @@ from flask import jsonify, request
 
 from utils.table_filter import filter_sensitive_tables, table_analytics_profile, table_label
 from utils.validators import validate_connection_info, ValidationError as ValidatorError
-from utils.error_handler import handle_app_error, handle_database_error, DatabaseError
+from utils.error_handler import handle_app_error, handle_database_error
 from utils.db_adapter import get_database_adapter
+from utils.config import Config
 
 def convert_value(value: Any) -> Any:
     """Convert database values to JSON-serializable types."""
@@ -109,7 +110,7 @@ def open_connection(conn_info: Dict[str, Any]):
 def connect():
     """Connect to database and retrieve analytics-ready tables."""
     payload = request.get_json(force=True, silent=True) or {}
-    db_type_requested = str(payload.get('dbType') or 'sqlserver').lower()
+    db_type_requested = str(payload.get('dbType') or Config.DB_TYPE).lower()
 
     try:
         conn_info = validate_connection_info(payload)

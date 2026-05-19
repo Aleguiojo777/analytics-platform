@@ -2,6 +2,7 @@ import unittest
 
 from services.analytics_insights import analyze_anomalies_detailed, detect_anomalies, generate_executive_summary
 from controllers.db_controller import build_connection_string, friendly_connection_error
+from utils.config import Config
 from utils.table_filter import filter_sensitive_tables, table_analytics_profile
 
 
@@ -66,6 +67,24 @@ class DatabaseConnectionStringTests(unittest.TestCase):
 
         self.assertIn('Encrypt=No;', conn_str)
         self.assertIn('TrustServerCertificate=Yes;', conn_str)
+
+    def test_connection_timeout_uses_config_value(self):
+        original_timeout = Config.DB_CONNECTION_TIMEOUT
+        Config.DB_CONNECTION_TIMEOUT = 22
+        try:
+            conn_str = build_connection_string({
+                'server': 'localhost',
+                'port': '1433',
+                'database': 'AnalyticsDb',
+                'username': 'sa',
+                'password': 'Password123!',
+                'encrypt': False,
+                'trustCert': True,
+            })
+        finally:
+            Config.DB_CONNECTION_TIMEOUT = original_timeout
+
+        self.assertIn('Connection Timeout=22;', conn_str)
 
     def test_certificate_error_is_explained_in_plain_language(self):
         error = Exception(

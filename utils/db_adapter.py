@@ -1,13 +1,13 @@
 """Database adapter abstraction for SQL Server and MySQL support."""
 
 import os
-import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 from abc import ABC, abstractmethod
 
 import pyodbc
 
 from utils.config import Config
+from utils.validators import validate_connection_info
 
 # Conditional import for MySQL support
 try:
@@ -54,16 +54,15 @@ class SQLServerAdapter(DatabaseAdapter):
 
     def build_connection_string(self, conn_info: Dict[str, Any]) -> str:
         """Build SQL Server connection string."""
-        from utils.validators import validate_connection_info
         conn_info = validate_connection_info(conn_info)
 
-        server = clean_server(conn_info.get('server'))
-        port = clean_port(conn_info.get('port'))
-        database = clean_text_field(conn_info.get('database'), 'database')
-        username = clean_text_field(conn_info.get('username'), 'username')
-        password = clean_text_field(conn_info.get('password'), 'password', max_length=512)
-        encrypt = normalize_boolean(conn_info.get('encrypt'))
-        trust_cert = normalize_boolean(conn_info.get('trustCert'))
+        server = conn_info['server']
+        port = conn_info['port']
+        database = conn_info['database']
+        username = conn_info['username']
+        password = conn_info['password']
+        encrypt = conn_info['encrypt']
+        trust_cert = conn_info['trustCert']
 
         server_target = f'{server},{port}' if port else server
         trust_server = 'Yes' if trust_cert else 'No'
@@ -76,7 +75,7 @@ class SQLServerAdapter(DatabaseAdapter):
             f'PWD={odbc_value(password)};'
             f"Encrypt={'Yes' if encrypt else 'No'};"
             f'TrustServerCertificate={trust_server};'
-            f'Connection Timeout=10;'
+            f'Connection Timeout={Config.DB_CONNECTION_TIMEOUT};'
         )
 
     def open_connection(self, conn_info: Dict[str, Any]):
@@ -133,27 +132,25 @@ class MySQLAdapter(DatabaseAdapter):
             raise ImportError("mysql-connector-python is required for MySQL support. Install it with: pip install mysql-connector-python")
 
     def build_connection_string(self, conn_info: Dict[str, Any]) -> str:
-        """MySQL doesn't use connection strings like SQL Server; returns config dict."""
-        from utils.validators import validate_connection_info
+        """Return a masked, display-only MySQL connection target."""
         conn_info = validate_connection_info(conn_info)
 
-        server = clean_server(conn_info.get('server'))
-        port = clean_port(conn_info.get('port')) or '3306'
-        database = clean_text_field(conn_info.get('database'), 'database')
-        username = clean_text_field(conn_info.get('username'), 'username')
-        password = clean_text_field(conn_info.get('password'), 'password', max_length=512)
+        server = conn_info['server']
+        port = conn_info['port'] or '3306'
+        database = conn_info['database']
+        username = conn_info['username']
 
-        return f"mysql://{username}:{password}@{server}:{port}/{database}"
+        return f'mysql://{username}:***@{server}:{port}/{database}'
 
     def open_connection(self, conn_info: Dict[str, Any]):
         """Open MySQL connection."""
-        _ = self.build_connection_string(conn_info)  # Validate connection info
+        conn_info = validate_connection_info(conn_info)
 
-        server = clean_server(conn_info.get('server'))
-        port = int(clean_port(conn_info.get('port')) or '3306')
-        database = clean_text_field(conn_info.get('database'), 'database')
-        username = clean_text_field(conn_info.get('username'), 'username')
-        password = clean_text_field(conn_info.get('password'), 'password', max_length=512)
+        server = conn_info['server']
+        port = int(conn_info['port'] or '3306')
+        database = conn_info['database']
+        username = conn_info['username']
+        password = conn_info['password']
 
         return mysql.connector.connect(
             host=server,
@@ -221,53 +218,6 @@ def get_database_adapter(db_type: str = None) -> DatabaseAdapter:
         raise ValueError(f"Unsupported database type: {db_type}. Use 'sqlserver' or 'mysql'.")
 
 
-# Helper functions (used by adapters)
-MAX_FIELD_LENGTH = 256
-SERVER_PATTERN = re.compile(r'^[A-Za-z0-9_.\\,\-:]+$')
-
-
-def clean_text_field(value: Any, field_name: str, max_length: int = MAX_FIELD_LENGTH) -> str:
-    """Validate and clean text fields."""
-    text = str(value or '').strip()
-    if not text:
-        raise ValueError(f'{field_name} is required.')
-    if len(text) > max_length:
-        raise ValueError(f'{field_name} is too long.')
-    if any(ord(char) < 32 for char in text):
-        raise ValueError(f'{field_name} contains invalid characters.')
-    return text
-
-
-def clean_server(value: Any) -> str:
-    """Validate server name/host."""
-    server = clean_text_field(value, 'server')
-    if ';' in server or not SERVER_PATTERN.fullmatch(server):
-        raise ValueError('server contains invalid characters.')
-    return server
-
-
-def clean_port(value: Any) -> str:
-    """Validate port number."""
-    if value in (None, ''):
-        return ''
-    try:
-        port = int(str(value).strip())
-    except (TypeError, ValueError):
-        raise ValueError('port must be a number.')
-    if port < 1 or port > 65535:
-        raise ValueError('port must be between 1 and 65535.')
-    return str(port)
-
-
 def odbc_value(value: str) -> str:
     """Format value for ODBC connection string."""
     return '{' + value.replace('}', '}}') + '}'
-
-
-def normalize_boolean(value: Any) -> bool:
-    """Normalize various boolean representations."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.lower() in ('true', '1', 'yes', 'on')
-    return bool(value)

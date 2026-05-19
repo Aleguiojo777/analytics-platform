@@ -1,6 +1,6 @@
 {
   "name": "datalens-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "DataLens desktop shell for the local Python analytics platform.",
   "main": "electron/main.js",
   "author": "DataLens",
@@ -33,6 +33,8 @@
       "server.py",
       "README.md",
       "PYTHON_SETUP.md",
+      "DATABASE_SUPPORT.md",
+      "MYSQL_SUPPORT.md",
       "run-datalens.bat",
       ".env.example"
     ],

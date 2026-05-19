@@ -674,6 +674,9 @@ async function loadSmartInsights(tableName) {
 function resetSmartInsightCards() {
   ['summaryCard', 'metricsCard', 'anomaliesCard', 'trendsCard', 'columnAnalysisCard', 'recommendationsCard']
     .forEach(id => document.getElementById(id)?.classList.add('d-none'));
+
+  const recommendationsTitle = document.querySelector('#recommendationsCard h3');
+  if (recommendationsTitle) recommendationsTitle.innerHTML = '<i class="bi bi-lightbulb"></i> Recommendations';
   ['summaryContent', 'metricsContent', 'anomaliesContent', 'trendsContent', 'columnAnalysisContent', 'recommendationsContent']
     .forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
 
@@ -832,17 +835,7 @@ function renderSmartInsights(data) {
     html += '</ul>';
   }
 
-  if (summary.reportSections && summary.reportSections.length > 0) {
-    html += '<div class="report-section-grid">';
-    summary.reportSections.forEach(section => {
-      html += `<section class="report-section"><h4>${escHtml(section.title)}</h4><ul>`;
-      (section.items || []).forEach(item => {
-        html += `<li>${escHtml(cleanInsightText(item))}</li>`;
-      });
-      html += '</ul></section>';
-    });
-    html += '</div>';
-  }
+
   html += '</div>';
   summaryContent.innerHTML = html;
 
@@ -885,6 +878,10 @@ function renderSmartInsights(data) {
     });
     html += '</div>';
     anomaliesContent.innerHTML = html;
+  }
+
+  if (summary.reportSections && summary.reportSections.length > 0) {
+    renderReportSectionsCard(reportSectionsTitle(mode), reportSectionsIcon(mode), summary.reportSections);
   }
 
   // Render Trends
@@ -945,11 +942,76 @@ function renderSmartInsights(data) {
     recommendationsContent.innerHTML = html;
   }
 
+  orderSmartInsightCards(mode);
+
   // Store detailed analysis for later use
   window.smartDetailedAnalysis = data.detailedAnalysis;
 }
 
 
+function reportSectionsHtml(sections) {
+  let html = '<div class="report-section-grid">';
+  sections.forEach(section => {
+    html += `<section class="report-section"><h4>${escHtml(section.title)}</h4><ul>`;
+    (section.items || []).forEach(item => {
+      html += `<li>${escHtml(cleanInsightText(item))}</li>`;
+    });
+    html += '</ul></section>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderReportSectionsCard(title, icon, sections) {
+  const card = document.getElementById('recommendationsCard');
+  const content = document.getElementById('recommendationsContent');
+  const cardTitle = card?.querySelector('h3');
+  if (!card || !content) return;
+
+  if (cardTitle) cardTitle.innerHTML = `<i class="bi ${icon}"></i> ${escHtml(title)}`;
+  content.innerHTML = reportSectionsHtml(sections);
+  card.classList.remove('d-none');
+}
+
+function reportSectionsTitle(mode) {
+  const titles = {
+    executive: 'Decision Brief',
+    quality: 'Quality Review Details',
+    anomaly: 'Investigation Details',
+    forecast: 'Forecast Readiness Details',
+    kpi: 'KPI Planning Details'
+  };
+  return titles[mode] || 'Insight Details';
+}
+
+function reportSectionsIcon(mode) {
+  const icons = {
+    executive: 'bi-clipboard-data',
+    quality: 'bi-shield-check',
+    anomaly: 'bi-search',
+    forecast: 'bi-graph-up-arrow',
+    kpi: 'bi-bullseye'
+  };
+  return icons[mode] || 'bi-lightbulb';
+}
+function orderSmartInsightCards(mode) {
+  const content = document.getElementById('insightsContent');
+  if (!content) return;
+
+  const orders = {
+    executive: ['summaryCard', 'metricsCard', 'anomaliesCard', 'trendsCard', 'recommendationsCard', 'columnAnalysisCard'],
+    quality: ['summaryCard', 'recommendationsCard'],
+    anomaly: ['summaryCard', 'anomaliesCard', 'recommendationsCard', 'columnAnalysisCard'],
+    forecast: ['summaryCard', 'trendsCard', 'recommendationsCard'],
+    kpi: ['summaryCard', 'metricsCard', 'recommendationsCard']
+  };
+  const order = orders[mode] || orders.executive;
+
+  order.forEach(id => {
+    const card = document.getElementById(id);
+    if (card && !card.classList.contains('d-none')) content.appendChild(card);
+  });
+}
 function insightModeLabel(mode) {
   const labels = {
     executive: 'Executive Summary',

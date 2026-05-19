@@ -1,42 +1,59 @@
 # MySQL Support Implementation Summary
 
 ## Overview
-You now have a dual-database platform that supports both **SQL Server** and **MySQL** without changing code - just set an environment variable!
+
+DataLens supports both **SQL Server** and **MySQL** through the same API and frontend connection flow. Users can choose the database type in the app, and `DB_TYPE` still provides the server-side default.
 
 ## What Changed
 
-### 📋 Files Modified:
-1. **requirements.txt** - Added `mysql-connector-python==8.0.35`
-2. **utils/config.py** - Added `DB_TYPE` environment variable support
-3. **utils/error_handler.py** - Updated to accept database-specific error messages
-4. **controllers/db_controller.py** - Refactored to use database adapter pattern
+### Files Modified
 
-### 🆕 Files Created:
-1. **utils/db_adapter.py** - Database abstraction layer with dual adapters
-2. **DATABASE_SUPPORT.md** - Configuration and usage documentation
+1. **requirements.txt** - Added `mysql-connector-python==8.0.35`.
+2. **utils/config.py** - Added `DB_TYPE` environment variable support.
+3. **utils/error_handler.py** - Supports database-specific friendly error messages.
+4. **controllers/db_controller.py** - Uses the database adapter pattern.
+5. **frontend/index.html** and **frontend/app.js** - Added database type selection in the connection form.
 
-## How to Use
+### Files Created
 
-### Switch Database Types
+1. **utils/db_adapter.py** - Database abstraction layer with SQL Server and MySQL adapters.
+2. **DATABASE_SUPPORT.md** - Configuration and usage documentation.
 
-**SQL Server (Default):**
+## How To Use
+
+### Select In The App
+
+Use the database type selector in the connection form:
+
+- SQL Server uses port `1433` by default.
+- MySQL uses port `3306` by default.
+
+### Set A Server Default
+
 ```bash
+# SQL Server default
 export DB_TYPE=sqlserver
 python server.py
-```
 
-**MySQL:**
-```bash
+# MySQL default
 export DB_TYPE=mysql
 python server.py
 ```
 
-### API Connection Format
+On PowerShell:
 
-Both databases use the same API endpoint `/api/db/connect` with identical JSON:
+```powershell
+$env:DB_TYPE = "mysql"
+python server.py
+```
+
+## API Connection Format
+
+Both databases use the same endpoint, `/api/db/connect`:
 
 ```json
 {
+  "dbType": "mysql",
   "server": "localhost",
   "port": 3306,
   "database": "mydb",
@@ -45,78 +62,47 @@ Both databases use the same API endpoint `/api/db/connect` with identical JSON:
 }
 ```
 
+For SQL Server, `encrypt` and `trustCert` can also be provided.
+
 ## Key Implementation Details
 
 ### Architecture
-- **Adapter Pattern**: Abstract database differences behind a common interface
-- **Factory Function**: `get_database_adapter()` creates the right adapter based on `DB_TYPE`
-- **Query Abstraction**: Each adapter provides database-specific queries
-- **Error Handling**: Database-specific error messages for debugging
+
+- **Adapter Pattern**: Database differences are hidden behind a shared adapter interface.
+- **Factory Function**: `get_database_adapter()` returns the correct adapter from `dbType` or `DB_TYPE`.
+- **Query Abstraction**: Each adapter provides database-specific metadata queries.
+- **Error Handling**: Each adapter maps driver errors to user-friendly messages.
+- **Validation**: Connection inputs are validated through `utils/validators.py` before driver use.
 
 ### Database Query Mapping
 
 | Operation | SQL Server | MySQL |
-|-----------|-----------|-------|
+| --- | --- | --- |
 | Get Tables | `sys.tables` + `sys.schemas` | `INFORMATION_SCHEMA.TABLES` |
 | Get Columns | `INFORMATION_SCHEMA.COLUMNS` | `INFORMATION_SCHEMA.COLUMNS` |
-| Row Counts | Via `sys.partitions` | Via `TABLE_ROWS` |
-
-### Connection Defaults
-- SQL Server: 1433
-- MySQL: 3306
-
-## Installation
-
-```bash
-# Install dependencies (includes both database drivers)
-pip install -r requirements.txt
-
-# Set database type
-export DB_TYPE=mysql  # or 'sqlserver'
-
-# Run the server
-python server.py
-```
-
-## Features Maintained
-✅ All existing analytics functionality  
-✅ Table discovery and filtering  
-✅ Column profiling  
-✅ Row counting  
-✅ Error handling and logging  
-✅ API backward compatibility  
-
-## Testing
-
-To test the new MySQL support:
-
-1. Install MySQL Server
-2. Set `DB_TYPE=mysql` environment variable
-3. Use the same `/api/db/connect` endpoint with MySQL credentials
-4. Verify table discovery and analytics work as before
+| Row Counts | `sys.partitions` | `TABLE_ROWS` estimate |
 
 ## Configuration Variables
 
 ```bash
-DB_TYPE=sqlserver                          # Database type selection
-ODBC_DRIVER=ODBC Driver 18 for SQL Server  # SQL Server driver (SQL Server only)
-DB_CONNECTION_TIMEOUT=10                   # Connection timeout in seconds
+DB_TYPE=sqlserver                          # sqlserver or mysql
+ODBC_DRIVER=ODBC Driver 18 for SQL Server  # SQL Server only
+DB_CONNECTION_TIMEOUT=10                   # seconds
 ```
 
-## Error Messages
+## Features Maintained
 
-### SQL Server
-- "The server certificate is not trusted..."
-- "Login failed..."
-- "Could not reach the SQL Server..."
-- "The connection timed out..."
+- Existing analytics functionality
+- Table discovery and filtering
+- Column profiling
+- Row counting
+- Friendly error handling and logging
+- API backward compatibility
 
-### MySQL  
-- "Login failed. Check your username..."
-- "Could not reach the MySQL server..."
-- "The connection timed out..."
-- "The specified database does not exist..."
+## Testing Checklist
 
----
-
-**Note**: No changes needed to frontend or analytics logic. The platform now transparently supports both databases!
+1. Install dependencies with `pip install -r requirements.txt`.
+2. Start the server.
+3. Select SQL Server or MySQL in the app.
+4. Connect with valid credentials.
+5. Verify table discovery, dashboard analytics, and Smart Insights.

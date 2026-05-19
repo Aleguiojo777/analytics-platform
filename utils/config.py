@@ -85,6 +85,8 @@ class Config:
             raise ValueError(f'Invalid PORT: {cls.PORT}')
         if cls.ANOMALY_Z_SCORE_THRESHOLD <= 0:
             raise ValueError(f'Invalid ANOMALY_Z_SCORE_THRESHOLD: {cls.ANOMALY_Z_SCORE_THRESHOLD}')
+        if cls.DB_TYPE not in ('sqlserver', 'mysql'):
+            raise ValueError(f"Invalid DB_TYPE: {cls.DB_TYPE}. Use 'sqlserver' or 'mysql'.")
         return True
 
 
