@@ -1,8 +1,28 @@
 """Configuration management for DataLens."""
 
 import os
+from pathlib import Path
 from typing import Optional
 
+
+def load_env_file(path: str = '.env') -> None:
+    """Load simple KEY=VALUE pairs from a local .env file when present."""
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding='utf-8').splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith('#') or '=' not in line:
+            continue
+        key, value = line.split('=', 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_env_file()
 # Load from environment
 def get_env(key: str, default: str = None) -> Optional[str]:
     """Get environment variable."""
@@ -73,6 +93,12 @@ class Config:
     ENABLE_TREND_ANALYSIS = get_env_bool('ENABLE_TREND_ANALYSIS', True)
     ENABLE_CLEANED_MODE = get_env_bool('ENABLE_CLEANED_MODE', True)
     ENABLE_DATA_EXPORT = get_env_bool('ENABLE_DATA_EXPORT', True)
+    ENABLE_LOCAL_LLM = get_env_bool('ENABLE_LOCAL_LLM', False)
+
+    # Local LLM (Ollama-compatible) Configuration
+    LOCAL_LLM_URL = get_env('LOCAL_LLM_URL', 'http://127.0.0.1:11434/api/chat')
+    LOCAL_LLM_MODEL = get_env('LOCAL_LLM_MODEL', 'llama3.2:3b')
+    LOCAL_LLM_TIMEOUT = get_env_int('LOCAL_LLM_TIMEOUT', 45)
     
     # Logging
     LOG_LEVEL = get_env('LOG_LEVEL', 'INFO')

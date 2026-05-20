@@ -14,6 +14,7 @@ from services.analytics_insights import (
     median,
     std_dev,
 )
+from services.local_llm import apply_local_llm_anomaly_insights, apply_local_llm_column_insights, enrich_summary_with_local_llm
 from controllers.db_controller import rows_to_dicts
 from utils.table_filter import (
     DATE_TYPES,
@@ -303,8 +304,8 @@ def build_report_sections(
     text_cols: List[Dict[str, Any]],
     analyses: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
+    """Build neutral fallback sections from computed facts only."""
     observations = list(summary.get('keyObservations') or [])
-    recommendations = list(summary.get('recommendations') or [])
 
     if mode == 'quality':
         return [
@@ -316,40 +317,35 @@ def build_report_sections(
                     f"Columns: {profile.get('columnCount', 0)}",
                 ]
             },
-            {'title': 'What To Check', 'items': profile.get('healthReasons') or observations or ['No major readiness warnings detected.']},
-            {'title': 'Recommended Next Steps', 'items': recommendations or ['Use this table for dashboarding if the detected structure matches the business question.']}
+            {'title': 'Detected Readiness Notes', 'items': profile.get('healthReasons') or observations or ['No computed readiness notes.']}
         ]
 
     if mode == 'anomaly':
         return [
             {'title': 'Anomaly Findings', 'items': _anomaly_lines(summary, analyses)},
-            {'title': 'Columns Reviewed', 'items': [f"Analyzed numeric column(s): {_analysis_columns(analyses)}"]},
-            {'title': 'Investigation Steps', 'items': recommendations or ['Validate the largest unusual values against source transactions or business events.']}
+            {'title': 'Columns Reviewed', 'items': [f"Analyzed numeric column(s): {_analysis_columns(analyses)}"]}
         ]
 
     if mode == 'forecast':
-        readiness = []
-        readiness.append(f"Date fields: {_column_names(date_cols, 4)}")
-        readiness.append(f"Numeric measures: {_column_names(numeric_cols, 4)}")
-        readiness.append('Forecast confidence improves when date coverage is consistent and the selected measure has enough history.')
         return [
-            {'title': 'Forecast Readiness', 'items': readiness},
-            {'title': 'Trend Signals', 'items': _trend_lines(summary)},
-            {'title': 'Recommended Next Steps', 'items': recommendations or ['Add a reliable date field and primary measure before forecasting.']}
+            {'title': 'Forecast Inputs', 'items': [
+                f"Date fields: {_column_names(date_cols, 4)}",
+                f"Numeric measures: {_column_names(numeric_cols, 4)}",
+            ]},
+            {'title': 'Trend Signals', 'items': _trend_lines(summary)}
         ]
 
     if mode == 'kpi':
         return [
-            {'title': 'Candidate KPIs', 'items': _top_metric_lines(summary)},
-            {'title': 'Useful Dimensions', 'items': _category_lines(summary) if text_cols else ['No text dimensions were detected for segmentation.']},
-            {'title': 'Reporting Guidance', 'items': recommendations or ['Pick one primary KPI, one time field, and one segmentation field for the first dashboard.']}
+            {'title': 'Numeric Measures', 'items': _top_metric_lines(summary)},
+            {'title': 'Text Dimensions', 'items': _category_lines(summary) if text_cols else ['No text dimensions detected.']}
         ]
 
     return [
-        {'title': 'Decision Summary', 'items': observations or ['Review metrics, trends, anomalies, and recommendations below.']},
-        {'title': 'Key Metrics', 'items': _top_metric_lines(summary)},
-        {'title': 'Recommended Actions', 'items': recommendations or ['No immediate action is required from the current analysis.']}
+        {'title': 'Computed Summary', 'items': observations or ['No computed observations.']},
+        {'title': 'Key Metrics', 'items': _top_metric_lines(summary)}
     ]
+
 
 def apply_insight_mode(
     summary: Dict[str, Any],
@@ -360,9 +356,9 @@ def apply_insight_mode(
     text_cols: List[Dict[str, Any]],
     analyses: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
+    """Attach mode metadata and neutral computed facts before local LLM rewriting."""
     summary = dict(summary or {})
     mode = normalize_insight_mode(mode)
-    recommendations = list(summary.get('recommendations') or [])
     observations = list(summary.get('keyObservations') or [])
 
     summary['mode'] = mode
@@ -370,46 +366,18 @@ def apply_insight_mode(
     summary['dataQualityScore'] = summary.get('dataQualityScore', profile.get('score', 0))
 
     if mode == 'quality':
-        observations.insert(0, f"Table health is {profile.get('healthLabel', 'Unknown')} at {profile.get('score', 0)}% readiness.")
-        for reason in profile.get('healthReasons', [])[:3]:
-            recommendations.insert(0, f'Data quality focus: {reason}.')
-        recommendations.append('Validate missing values, duplicate categories, and type consistency before using the results for decisions.')
-        summary['narrativeText'] = f"Data Quality Review: this table scored {profile.get('score', 0)}% readiness. Use this mode to decide whether the table is trustworthy enough for dashboarding and reporting."
+        observations.insert(0, f"Computed readiness: {profile.get('healthLabel', 'Unknown')} ({profile.get('score', 0)}%).")
     elif mode == 'anomaly':
         anomaly_count = sum(len(item.get('anomalies') or []) for item in analyses)
-        if anomaly_count:
-            observations.insert(0, f'{anomaly_count} numeric outlier(s) were detected across analyzed measures.')
-            recommendations.insert(0, 'Investigate the largest outliers first, then compare them with source records and business events.')
-        else:
-            observations.insert(0, 'No strong numeric outlier cluster was detected in the sampled analysis window.')
-            recommendations.insert(0, 'Increase sample size or add more measurable numeric columns if deeper anomaly review is required.')
-        summary['narrativeText'] = 'Anomaly Investigation: this view prioritizes unusual values, their likely impact, and practical validation steps.'
+        observations.insert(0, f'Computed anomaly count: {anomaly_count}.')
     elif mode == 'forecast':
-        if date_cols and numeric_cols:
-            observations.insert(0, f"Forecast-ready structure detected: date field(s) {_column_names(date_cols, 2)} and measure(s) {_column_names(numeric_cols, 3)}.")
-            recommendations.insert(0, 'Use a stable date field and one primary business measure before trusting forecast direction.')
-        else:
-            missing = []
-            if not date_cols:
-                missing.append('a date/time field')
-            if not numeric_cols:
-                missing.append('a numeric measure')
-            recommendations.insert(0, f"Forecast readiness is limited because the table needs {' and '.join(missing)}.")
-        summary['narrativeText'] = 'Forecast Readiness: this view checks whether the table has enough time and measure structure for trend-based planning.'
+        observations.insert(0, f"Forecast inputs: dates={_column_names(date_cols, 2)}, measures={_column_names(numeric_cols, 3)}.")
     elif mode == 'kpi':
-        if numeric_cols:
-            recommendations.insert(0, f"Candidate KPIs: {_column_names(numeric_cols, 5)}.")
-        if text_cols:
-            recommendations.append(f"Use {_column_names(text_cols, 4)} as dimensions to segment KPI performance.")
-        if date_cols:
-            recommendations.append(f"Use {_column_names(date_cols, 2)} for period-over-period KPI tracking.")
-        observations.insert(0, 'KPI suggestions are derived from numeric measures, category dimensions, and available date fields.')
-        summary['narrativeText'] = 'Business KPI Suggestions: this view translates detected columns into candidate metrics and reporting dimensions.'
-    else:
-        recommendations.append('Use the mode selector to switch between quality, anomaly, forecast, and KPI-focused recommendations.')
+        observations.insert(0, f"KPI inputs: measures={_column_names(numeric_cols, 5)}, dimensions={_column_names(text_cols, 4)}, dates={_column_names(date_cols, 2)}.")
 
-    summary['recommendations'] = recommendations[:8]
+    summary['recommendations'] = list(summary.get('recommendations') or [])[:8]
     summary['keyObservations'] = observations[:6]
+    summary['narrativeText'] = ' '.join(summary['keyObservations'])
     summary['reportSections'] = build_report_sections(mode, summary, profile, numeric_cols, date_cols, text_cols, analyses)
     return summary
 @handle_app_error
@@ -642,7 +610,7 @@ def build_smart_insights_pdf(payload: Dict[str, Any]) -> BytesIO:
 
     summary = payload.get('summary') or {}
     table_name = payload.get('tableName') or payload.get('table') or 'Selected table'
-    mode_label = summary.get('modeLabel') or payload.get('modeLabel') or 'Smart Insights'
+    mode_label = summary.get('modeLabel') or payload.get('modeLabel') or 'Insight Engine'
     generated = datetime.now().strftime('%Y-%m-%d %H:%M')
 
     buffer = BytesIO()
@@ -653,7 +621,7 @@ def build_smart_insights_pdf(payload: Dict[str, Any]) -> BytesIO:
         leftMargin=0.55 * inch,
         topMargin=0.55 * inch,
         bottomMargin=0.55 * inch,
-        title='DataLens Smart Insights Report'
+        title='DataLens Insight Engine Report'
     )
 
     base = getSampleStyleSheet()
@@ -665,7 +633,7 @@ def build_smart_insights_pdf(payload: Dict[str, Any]) -> BytesIO:
     }
 
     story = [
-        Paragraph('DataLens Smart Insights Report', styles['Title']),
+        Paragraph('DataLens Insight Engine Report', styles['Title']),
         Paragraph(f'<b>Table:</b> {pdf_text(table_name)}', styles['Meta']),
         Paragraph(f'<b>Mode:</b> {pdf_text(mode_label)}', styles['Meta']),
         Paragraph(f'<b>Generated:</b> {pdf_text(generated)}', styles['Meta']),
@@ -700,11 +668,11 @@ def build_smart_insights_pdf(payload: Dict[str, Any]) -> BytesIO:
 
 @handle_app_error
 def export_smart_insights_pdf():
-    """Export the current Smart Insights report as a backend-generated PDF."""
+    """Export the current Insight Engine report as a backend-generated PDF."""
     payload = request.get_json(force=True, silent=True) or {}
     summary = payload.get('summary') or {}
     if not summary:
-        return jsonify({'error': 'No Smart Insights report data was provided.'}), 400
+        return jsonify({'error': 'No Insight Engine report data was provided.'}), 400
 
     pdf_buffer = build_smart_insights_pdf(payload)
     table_name = pdf_filename(payload.get('tableName') or 'smart_insights')
@@ -722,6 +690,7 @@ def get_executive_summary():
     """Generate smart executive summary with anomalies and trends."""
     payload = request.get_json(force=True, silent=True) or {}
     insight_mode = normalize_insight_mode(payload.get('insightMode'))
+    use_ai_insights = bool(payload.get('useAiInsights') or payload.get('insightEngine') == 'ai')
 
     db_type = request_db_type(payload)
     parsed, error_response = parse_requested_table(payload, db_type)
@@ -758,14 +727,15 @@ def get_executive_summary():
                     'keyMetrics': [],
                     'criticalAnomalies': [],
                     'trends': [],
-                    'recommendations': [
-                        'This table is best analyzed as categorical data. Review category concentration and completeness instead of numeric trends.',
-                        'Add a measurable numeric field or date field if forecasting, variance, or anomaly detection is required.'
-                    ],
+                    'recommendations': [],
                     'categoryMetrics': category_profiles[:3],
                     'dataQualityScore': profile['score']
                 }
                 summary = apply_insight_mode(summary, insight_mode, profile, numeric_cols, date_cols, text_cols, [])
+                summary['insightEngine'] = 'smart'
+                if use_ai_insights:
+                    summary = enrich_summary_with_local_llm(table_ref['label'], summary, profile, numeric_cols, date_cols, text_cols, [])
+                    summary['insightEngine'] = 'ai' if summary.get('llmStatus', '').startswith('Generated locally') else 'smart'
                 return jsonify({
                     'tableName': table_ref['label'],
                     'tableRef': {'schema': table_ref['schema'], 'name': table_ref['name'], 'label': table_ref['label']},
@@ -852,14 +822,20 @@ def get_executive_summary():
                     'keyMetrics': [],
                     'criticalAnomalies': [],
                     'trends': [],
-                    'recommendations': ['Add numeric columns or more numeric rows for better Smart Insights.'],
+                    'recommendations': [],
                     'dataQualityScore': profile['score'],
-                    'narrativeText': 'Unable to analyze trends or anomalies because there is insufficient numeric data.'
+                    'narrativeText': 'Computed numeric analysis is limited by available numeric values.'
                 }
             elif 'narrativeText' not in exec_summary:
-                exec_summary['narrativeText'] = f'Analyzed {len(analyses)} numeric column(s) across {total_rows} row(s). Review key metrics, trends, and anomalies below.'
+                exec_summary['narrativeText'] = f'Computed analysis: {len(analyses)} numeric column(s), {total_rows} row(s).'
 
             exec_summary = apply_insight_mode(exec_summary, insight_mode, profile, numeric_cols, date_cols, text_cols, analyses)
+            exec_summary['insightEngine'] = 'smart'
+            if use_ai_insights:
+                exec_summary = enrich_summary_with_local_llm(table_ref['label'], exec_summary, profile, numeric_cols, date_cols, text_cols, analyses)
+                exec_summary['insightEngine'] = 'ai' if exec_summary.get('llmStatus', '').startswith('Generated locally') else 'smart'
+                analyses = apply_local_llm_column_insights(analyses, exec_summary)
+                analyses = apply_local_llm_anomaly_insights(analyses, exec_summary)
 
             return jsonify({
                 'tableName': table_ref['label'],

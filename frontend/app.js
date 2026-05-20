@@ -10,6 +10,7 @@ let analyticsData = null;
 let charts = {};              // Chart.js instances
 let dbType = 'sqlserver';     // Database type (sqlserver or mysql)
 let insightMode = 'executive';
+let insightEngine = 'smart';
 let smartInsightsResult = null;
 let currentTheme = 'industrial';
 const THEME_STORAGE_KEY = 'datalens-color-theme';
@@ -164,7 +165,7 @@ function resetLoadedData() {
   document.getElementById('insightsContent').classList.add('d-none');
   document.getElementById('insightsLoading').classList.add('d-none');
   document.getElementById('insightsEmpty').classList.remove('d-none');
-  document.querySelector('#insightsEmpty p').textContent = 'No table selected. Connect and select a table to see Smart Insights.';
+  document.querySelector('#insightsEmpty p').textContent = 'No table selected. Connect and select an analytics-ready table to use Insight Engine.';
   resetSmartInsightCards();
 }
 function showApp() {
@@ -182,11 +183,16 @@ function populateUserInfo() {
 
 // Navigation
 function showPanel(name) {
+  if (['dashboard', 'insights', 'data'].includes(name) && selectedTable && !isAnalyticsReadyTable(selectedTable)) {
+    showPanel('connect');
+    showError(document.getElementById('connectError'), blockedTableMessage(selectedTable));
+    return;
+  }
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 
   const panelMap = { connect: 'panelConnect', dashboard: 'panelDashboard', insights: 'panelInsights', data: 'panelData' };
-  const titleMap = { connect: 'Connect to Database', dashboard: 'Analytics Dashboard', insights: 'Smart Insights', data: 'Data Preview' };
+  const titleMap = { connect: 'Connect to Database', dashboard: 'Analytics Dashboard', insights: 'Insight Engine', data: 'Data Preview' };
 
   const panel = document.getElementById(panelMap[name]);
   if (panel) panel.classList.add('active');
@@ -204,7 +210,7 @@ function showPanel(name) {
     document.getElementById('sidebar').classList.remove('mobile-open');
   }
 
-  // Load Smart Insights when panel is opened
+  // Load Insight Engine when panel is opened
   if (name === 'insights' && selectedTable) {
     loadSmartInsights(selectedTable);
   }
@@ -321,7 +327,13 @@ function renderTableList(tables) {
           ${escHtml(healthLabel)} ${profile.score !== undefined ? escHtml(profile.score) + '%' : ''}
         </span>
       `;
-      item.addEventListener('click', () => selectTable(t, item));
+      if (usable) {
+        item.addEventListener('click', () => selectTable(t, item));
+      } else {
+        item.setAttribute('aria-disabled', 'true');
+        item.title = blockedTableMessage(t);
+        item.addEventListener('click', () => showError(document.getElementById('connectError'), blockedTableMessage(t)));
+      }
       list.appendChild(item);
     });
   }
@@ -336,8 +348,24 @@ function healthClass(label) {
   if (value.includes('fair')) return 'fair';
   return 'blocked';
 }
+
+function isAnalyticsReadyTable(table) {
+  const profile = table?.profile || {};
+  return !!table && profile.usable !== false && table.analyticsReady !== false;
+}
+
+function blockedTableMessage(table) {
+  const profile = table?.profile || {};
+  return profile.recommendedAction || profile.reason || profile.healthReasons?.[0] || 'This table is blocked for analytics.';
+}
 async function onInsightModeChange() {
   insightMode = document.getElementById('insightModeSelector')?.value || 'executive';
+  if (selectedTable && document.getElementById('panelInsights')?.classList.contains('active')) {
+    await loadSmartInsights(selectedTable);
+  }
+}
+async function onInsightEngineChange() {
+  insightEngine = document.getElementById('insightEngineSelector')?.value || 'smart';
   if (selectedTable && document.getElementById('panelInsights')?.classList.contains('active')) {
     await loadSmartInsights(selectedTable);
   }
@@ -352,6 +380,11 @@ async function refreshSelectedTable() {
 }
 
 async function selectTable(tableName, itemEl) {
+  if (!isAnalyticsReadyTable(tableName)) {
+    showError(document.getElementById('connectError'), blockedTableMessage(tableName));
+    return;
+  }
+
   document.querySelectorAll('.table-item').forEach(i => i.classList.remove('selected'));
   itemEl.classList.add('selected');
   selectedTable = tableName;
@@ -716,7 +749,8 @@ function fmt(n) {
   return Number(n).toLocaleString();
 }
 
-// SMART INSIGHTS
+
+
 async function loadSmartInsights(tableName) {
   const loading = document.getElementById('insightsLoading');
   const content = document.getElementById('insightsContent');
@@ -729,7 +763,9 @@ async function loadSmartInsights(tableName) {
 
   try {
     insightMode = document.getElementById('insightModeSelector')?.value || insightMode || 'executive';
-    const res = await post('/api/analytics/executive-summary', { connInfo, dbType: connInfo?.dbType || dbType, tableName: tablePayload(tableName), cleanedMode, insightMode });
+    insightEngine = document.getElementById('insightEngineSelector')?.value || insightEngine || 'smart';
+    const useAiInsights = insightEngine === 'ai';
+    const res = await post('/api/analytics/executive-summary', { connInfo, dbType: connInfo?.dbType || dbType, tableName: tablePayload(tableName), cleanedMode, insightMode, insightEngine, useAiInsights });
 
     loading.classList.add('d-none');
 
@@ -749,10 +785,10 @@ async function loadSmartInsights(tableName) {
     renderSmartInsights(res);
     content.classList.remove('d-none');
   } catch (e) {
-    console.error('Smart Insights Error:', e);
+    console.error('Insight Engine Error:', e);
     loading.classList.add('d-none');
     empty.classList.remove('d-none');
-    empty.querySelector('p').textContent = e.message || 'Failed to generate Smart Insights.';
+    empty.querySelector('p').textContent = e.message || 'Failed to generate insights.';
   }
 }
 
@@ -774,7 +810,7 @@ async function copyInsightsReport() {
 
   try {
     await navigator.clipboard.writeText(report);
-    flashAction('Smart Insights report copied to clipboard.');
+    flashAction('Insight Engine report copied to clipboard.');
   } catch (e) {
     console.error('Clipboard copy failed:', e);
     flashAction('Copy failed. Select the report text manually.');
@@ -788,7 +824,7 @@ function buildInsightsReport() {
   const summary = data.summary;
   const modeLabel = summary.modeLabel || insightModeLabel(summary.mode || insightMode);
   const lines = [
-    `# DataLens Smart Insights Report`,
+    `# DataLens Insight Engine Report`,
     ``,
     `**Table:** ${tableLabel(selectedTable)}`,
     `**Mode:** ${modeLabel}`,
@@ -830,7 +866,7 @@ function exportInsightsMarkdown() {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-  flashAction('Smart Insights report exported.');
+  flashAction('Insight Engine report exported.');
 }
 async function exportInsightsPdf() {
   if (!smartInsightsResult?.summary || !selectedTable) return;
@@ -863,7 +899,7 @@ async function exportInsightsPdf() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-    flashAction('Smart Insights PDF exported.');
+    flashAction('Insight Engine PDF exported.');
   } catch (e) {
     console.error('PDF export failed:', e);
     flashAction('PDF export failed. Is the server running?');
@@ -901,10 +937,15 @@ function renderSmartInsights(data) {
 
   let html = '<div class="insight-summary">';
   if (modeLabel) {
+    const engineLabel = summary.insightEngine === 'ai' ? 'AI Analysis' : 'Smart Analysis';
+    html += `<p><strong>Engine:</strong> ${escHtml(engineLabel)}</p>`;
     html += `<p><strong>Mode:</strong> ${escHtml(modeLabel)}</p>`;
   }
   if (summary.dataQualityScore !== undefined) {
     html += `<p><strong>Data Quality Score:</strong> ${escHtml(summary.dataQualityScore)}%</p>`;
+  }
+  if (summary.llmStatus) {
+    html += `<p><strong>Local AI:</strong> ${escHtml(summary.llmStatus)}</p>`;
   }
   if (summary.narrativeText) {
     html += `<div class="narrative-text">

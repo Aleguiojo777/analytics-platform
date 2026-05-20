@@ -1,6 +1,7 @@
 import unittest
 
 from services.analytics_insights import analyze_anomalies_detailed, detect_anomalies, generate_executive_summary
+from services.local_llm import apply_local_llm_anomaly_insights, apply_local_llm_column_insights, build_insight_prompt, enrich_summary_with_local_llm, parse_llm_json
 from controllers.db_controller import build_connection_string, friendly_connection_error
 from utils.config import Config
 from utils.table_filter import filter_sensitive_tables, table_analytics_profile
@@ -117,7 +118,7 @@ class DatabaseConnectionStringTests(unittest.TestCase):
 
 
 class InsightRecommendationTests(unittest.TestCase):
-    def test_financial_anomaly_gets_specific_action_plan(self):
+    def test_anomaly_detail_keeps_computed_facts_without_rule_text(self):
         values = [100, 105, 98, 102, 5000, 99, 101]
         stats = {
             'count': len(values),
@@ -131,9 +132,10 @@ class InsightRecommendationTests(unittest.TestCase):
         details = analyze_anomalies_detailed('SalesAmount', anomalies, values, stats)
 
         self.assertGreaterEqual(len(details), 1)
-        self.assertEqual(details[0]['metricContext'], 'financial metric')
-        joined = ' '.join(details[0]['likelyCauses'] + details[0]['validationChecks'])
-        self.assertIn('invoice', joined.lower())
+        self.assertEqual(details[0]['metricContext'], 'numeric metric')
+        self.assertEqual(details[0]['likelyCauses'], [])
+        self.assertEqual(details[0]['validationChecks'], [])
+        self.assertIn('SalesAmount value', details[0]['impact'])
 
     def test_summary_uses_actual_analyzed_value_count_for_rate(self):
         summary = generate_executive_summary([
@@ -145,10 +147,85 @@ class InsightRecommendationTests(unittest.TestCase):
                 'trend': {'trend': 'stable'},
             }
         ])
+        self.assertEqual(summary['recommendations'], [])
 
-        recommendations = ' '.join(summary['recommendations'])
-        self.assertIn('1 of 100', recommendations)
+class LocalLLMIntegrationTests(unittest.TestCase):
+    def test_local_llm_is_disabled_by_default_without_changing_summary(self):
+        original_enabled = Config.ENABLE_LOCAL_LLM
+        Config.ENABLE_LOCAL_LLM = False
+        summary = {'narrativeText': 'Built-in narrative', 'recommendations': []}
+        try:
+            enriched = enrich_summary_with_local_llm('dbo.Sales', summary, {}, [], [], [])
+        finally:
+            Config.ENABLE_LOCAL_LLM = original_enabled
 
+        self.assertIs(enriched, summary)
+        self.assertNotIn('llmStatus', enriched)
+
+    def test_local_llm_prompt_uses_metadata_and_aggregate_insights(self):
+        prompt = build_insight_prompt(
+            'dbo.Sales',
+            {
+                'keyMetrics': [{'column': 'Revenue', 'stats': {'avg': 42}}],
+                'keyObservations': ['Revenue is volatile'],
+                'recommendations': ['Review high variance'],
+            },
+            {'score': 88, 'rowCount': 24, 'columnCount': 5, 'healthLabel': 'Ready'},
+            [{'COLUMN_NAME': 'Revenue'}],
+            [{'COLUMN_NAME': 'OrderDate'}],
+            [{'COLUMN_NAME': 'Region'}],
+        )
+
+        self.assertIn('dbo.Sales', prompt)
+        self.assertIn('Revenue is volatile', prompt)
+        self.assertIn('Use only the provided metadata and aggregate statistics', prompt)
+    def test_local_llm_column_insights_replace_computed_text(self):
+        analyses = [{'column': 'Revenue', 'insights': ['Computed insight']}]
+        summary = {'llmColumnInsights': [{'column': ' revenue ', 'insights': ['LLM-written insight']}]} 
+
+        enriched = apply_local_llm_column_insights(analyses, summary)
+
+        self.assertEqual(enriched[0]['insights'], ['LLM-written insight'])
+        self.assertTrue(enriched[0]['llmInsights'])
+
+    def test_local_llm_json_parser_accepts_fenced_json(self):
+        parsed = parse_llm_json('```json\n{"recommendations":["Review totals"]}\n```')
+
+        self.assertEqual(parsed['recommendations'], ['Review totals'])
+    def test_local_llm_anomaly_insights_replace_rule_text(self):
+        analyses = [{
+            'column': 'Revenue',
+            'anomaliesDetailed': [{
+                'rowIndex': 4,
+                'impact': 'Rule impact',
+                'likelyCauses': ['Rule cause'],
+                'validationChecks': ['Rule check'],
+                'fixSteps': ['Rule fix'],
+                'businessQuestions': ['Rule question'],
+                'decisionGuide': ['Rule decision'],
+            }]
+        }]
+        summary = {'llmAnomalyInsights': [{
+            'column': ' revenue ',
+            'rowIndex': 4,
+            'impact': 'LLM impact',
+            'likelyCauses': ['LLM cause'],
+            'validationChecks': ['LLM check'],
+            'fixSteps': ['LLM fix'],
+            'businessQuestions': ['LLM question'],
+            'decisionGuide': ['LLM decision'],
+        }]}
+
+        enriched = apply_local_llm_anomaly_insights(analyses, summary)
+        detail = enriched[0]['anomaliesDetailed'][0]
+
+        self.assertEqual(detail['impact'], 'LLM impact')
+        self.assertEqual(detail['likelyCauses'], ['LLM cause'])
+        self.assertEqual(detail['validationChecks'], ['LLM check'])
+        self.assertEqual(detail['fixSteps'], ['LLM fix'])
+        self.assertEqual(detail['businessQuestions'], ['LLM question'])
+        self.assertEqual(detail['decisionGuide'], ['LLM decision'])
+        self.assertTrue(detail['llmInsights'])
 
 if __name__ == '__main__':
     unittest.main()

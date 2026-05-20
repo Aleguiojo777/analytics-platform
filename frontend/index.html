@@ -30,7 +30,7 @@
         <i class="bi bi-grid-3x3-gap-fill"></i><span>Dashboard</span>
       </a>
       <a class="nav-item" onclick="showPanel('insights')" id="navInsights">
-        <i class="bi bi-lightbulb-fill"></i><span>Smart Insights</span>
+        <i class="bi bi-lightbulb-fill"></i><span>Insight Engine</span>
       </a>
       <a class="nav-item" onclick="showPanel('data')" id="navData">
         <i class="bi bi-table"></i><span>Data Table</span>
@@ -181,16 +181,24 @@
       </div>
     </section>
 
-    <!-- SMART INSIGHTS PANEL -->
+    <!-- INSIGHT ENGINE PANEL -->
     <section class="panel" id="panelInsights">
       <div class="panel-header">
-        <h2><i class="bi bi-lightbulb-fill"></i> Smart Insights</h2>
-        <p>Executive summary and data intelligence for decision-making</p>
+        <h2><i class="bi bi-lightbulb-fill"></i> Insight Engine</h2>
+        <p>Choose fast computed analysis or local AI-assisted insight writing</p>
         <div class="panel-actions">
+          <label class="smart-mode-select" title="Choose fast computed insights or slower local AI writing">
+            <i class="bi bi-cpu"></i>
+            <span>Engine</span>
+            <select id="insightEngineSelector" aria-label="Insight engine" onchange="onInsightEngineChange()">
+              <option value="smart">Smart Analysis</option>
+              <option value="ai">AI Analysis</option>
+            </select>
+          </label>
           <label class="smart-mode-select" title="Choose the kind of insight to generate">
             <i class="bi bi-sliders"></i>
             <span>Mode</span>
-            <select id="insightModeSelector" aria-label="Smart Insight mode" onchange="onInsightModeChange()">
+            <select id="insightModeSelector" aria-label="Insight mode" onchange="onInsightModeChange()">
               <option value="executive">Executive Summary</option>
               <option value="quality">Data Quality Review</option>
               <option value="anomaly">Anomaly Investigation</option>
@@ -262,7 +270,7 @@
 
       <div id="insightsEmpty" class="empty-state">
         <i class="bi bi-lightbulb"></i>
-        <p>No table selected. Connect and select a table to see Smart Insights.</p>
+        <p>No table selected. Connect and select an analytics-ready table to use Insight Engine.</p>
       </div>
     </section>
 
