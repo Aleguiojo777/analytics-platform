@@ -159,16 +159,25 @@ def connect():
             })
 
         safe_labels = set(filter_sensitive_tables([table['label'] for table in tables]))
-        safe_tables = [table for table in tables if table['label'] in safe_labels]
 
         profiled_tables = []
         analytics_ready_count = 0
-        for table in safe_tables:
+        for table in tables:
             profile = table_analytics_profile(
                 table['label'],
                 columns_by_table.get(table['label'], []),
                 table['rowCount']
             )
+            if table['label'] not in safe_labels:
+                profile = {
+                    **profile,
+                    'usable': False,
+                    'score': min(profile.get('score', 0), 20),
+                    'healthLabel': 'Blocked',
+                    'healthReasons': ['Sensitive-looking table name'],
+                    'reason': 'Sensitive-looking table name',
+                    'recommendedAction': 'Choose a non-sensitive analytics table.'
+                }
             if profile['usable']:
                 analytics_ready_count += 1
             profiled_tables.append({
@@ -186,7 +195,8 @@ def connect():
             'analyticsReadyCount': analytics_ready_count,
             'rawTableCount': len(tables),
             'safeTableCount': len(profiled_tables),
-            'filteredTableCount': max(len(tables) - len(safe_tables), 0)
+            'sensitiveTableCount': max(len(tables) - len(safe_labels), 0),
+            'filteredTableCount': 0
         })
     except Exception as error:
         friendly_msg = adapter.friendly_connection_error(error)

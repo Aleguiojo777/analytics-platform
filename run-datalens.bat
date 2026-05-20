@@ -3,7 +3,7 @@ setlocal
 
 cd /d "%~dp0"
 set PORT=3000
-set CORS_ORIGINS=http://localhost:%PORT%,http://127.0.0.1:%PORT%
+set CORS_ORIGINS=http://localhost:%PORT%,http://127.0.0.1:%PORT%,null
 
 if not exist ".venv\Scripts\python.exe" (
   echo Creating local Python environment...

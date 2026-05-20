@@ -56,6 +56,18 @@
       <button class="sidebar-toggle" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
       <div class="topbar-title" id="topbarTitle">Connect to Database</div>
       <div class="topbar-right">
+        <label class="theme-picker" title="Choose color theme">
+          <i class="bi bi-palette2"></i>
+          <span class="theme-swatches" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+          </span>
+          <select id="themeSelector" aria-label="Color theme" onchange="onThemeChange()">
+            <option value="industrial">Industrial Dark</option>
+            <option value="light">Clean Light</option>
+            <option value="ocean">Ocean Night</option>
+            <option value="forest">Forest Light</option>
+          </select>
+        </label>
         <div class="db-badge d-none" id="dbBadge">
           <i class="bi bi-server"></i>
           <span id="dbBadgeText">Not connected</span>

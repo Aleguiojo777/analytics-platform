@@ -3,6 +3,7 @@
 // State
 let connInfo = null;          // DB connection details
 let availableTables = [];
+let tableListEmptyMessage = 'No matching tables found.';
 let cleanedMode = false;
 let selectedTable = null;
 let analyticsData = null;
@@ -10,16 +11,83 @@ let charts = {};              // Chart.js instances
 let dbType = 'sqlserver';     // Database type (sqlserver or mysql)
 let insightMode = 'executive';
 let smartInsightsResult = null;
+let currentTheme = 'industrial';
+const THEME_STORAGE_KEY = 'datalens-color-theme';
+const COLOR_THEMES = {
+  industrial: ['#00e5a0', '#4d9fff', '#ffd166', '#ff6b6b', '#c77dff', '#06d6a0', '#ef476f', '#118ab2'],
+  ocean: ['#38bdf8', '#22d3ee', '#facc15', '#fb7185', '#818cf8', '#2dd4bf', '#f472b6', '#0ea5e9'],
+  light: ['#2563eb', '#0891b2', '#ca8a04', '#dc2626', '#7c3aed', '#16a34a', '#db2777', '#0284c7'],
+  forest: ['#4d7c0f', '#0f766e', '#a16207', '#b91c1c', '#15803d', '#0369a1', '#65a30d', '#be185d']
+};
+const API_BASE_URL = window.location.protocol === 'file:' ? 'http://127.0.0.1:3000' : '';
+
+function apiUrl(path) {
+  return `${API_BASE_URL}${path}`;
+}
 
 // Init
 window.addEventListener('DOMContentLoaded', () => {
+  initTheme();
   loadDatabaseConfig();
   showApp();
 });
 
+function initTheme() {
+  const savedTheme = getStoredTheme();
+  applyColorTheme(COLOR_THEMES[savedTheme] ? savedTheme : currentTheme);
+}
+
+function getStoredTheme() {
+  try {
+    return localStorage.getItem(THEME_STORAGE_KEY) || localStorage.getItem('datalens-color-palette');
+  } catch (e) {
+    console.warn('Theme storage is unavailable:', e);
+    return null;
+  }
+}
+
+function saveTheme(name) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, name);
+  } catch (e) {
+    console.warn('Theme preference could not be saved:', e);
+  }
+}
+
+function onThemeChange() {
+  const selected = document.getElementById('themeSelector')?.value || 'industrial';
+  applyColorTheme(selected);
+  if (analyticsData) renderDashboard(analyticsData);
+}
+
+function applyColorTheme(name) {
+  currentTheme = COLOR_THEMES[name] ? name : 'industrial';
+  if (currentTheme === 'industrial') {
+    document.body.removeAttribute('data-theme');
+  } else {
+    document.body.dataset.theme = currentTheme;
+  }
+  saveTheme(currentTheme);
+
+  const selector = document.getElementById('themeSelector');
+  if (selector) selector.value = currentTheme;
+}
+
+function getThemeColors() {
+  return COLOR_THEMES[currentTheme] || COLOR_THEMES.industrial;
+}
+
+function cssVar(name) {
+  return getComputedStyle(document.body).getPropertyValue(name).trim();
+}
+
+function withAlpha(hex, alphaHex) {
+  return `${hex}${alphaHex}`;
+}
+
 async function loadDatabaseConfig() {
   try {
-    const res = await fetch('/api/db/config');
+    const res = await fetch(apiUrl('/api/db/config'));
     const data = await res.json();
     dbType = data.dbType || 'sqlserver';
     document.getElementById('dbTypeSelector').value = dbType;
@@ -72,6 +140,7 @@ function updateFormForDatabaseType() {
 function resetLoadedData() {
   connInfo = null;
   availableTables = [];
+  tableListEmptyMessage = 'No matching tables found.';
   selectedTable = null;
   analyticsData = null;
   window.smartDetailedAnalysis = null;
@@ -187,13 +256,18 @@ async function doConnect() {
     availableTables = res.tables || [];
     const readyCount = Number(res.analyticsReadyCount ?? res.tableCount ?? 0);
     const safeCount = Number(res.safeTableCount ?? availableTables.length);
+    const sensitiveCount = Number(res.sensitiveTableCount || 0);
     const filtered = Number(res.filteredTableCount || 0);
     const rawCount = Number(res.rawTableCount ?? (safeCount + filtered));
     const hiddenText = filtered ? `, ${filtered} sensitive table(s) hidden` : '';
+    const blockedText = sensitiveCount ? `, ${sensitiveCount} sensitive-looking table(s) shown as blocked` : '';
     const warningText = res.warning ? ` ${res.warning}${res.discoveryError ? ` Details: ${res.discoveryError}` : ''}` : '';
     const countText = rawCount > 0
-      ? `${readyCount} ready of ${safeCount} visible table(s)${hiddenText}`
+      ? `${readyCount} ready of ${safeCount} visible table(s)${hiddenText}${blockedText}`
       : 'no user tables found';
+    tableListEmptyMessage = res.warning || (rawCount > 0
+      ? 'No tables match your current search.'
+      : 'Connected, but no user tables were found for this database/account.');
     showSuccess(sucEl, `Connected to "${res.database}" - ${countText}.${warningText}`);
     // Show DB badge in topbar
     const badge = document.getElementById('dbBadge');
@@ -203,7 +277,7 @@ async function doConnect() {
   } catch (e) {
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-lightning-charge-fill"></i><span>Connect & Fetch Tables</span>';
-    showError(errEl, 'Network error. Is the server running?');
+    showError(errEl, e.message || 'DataLens backend is not reachable.');
   }
 }
 
@@ -223,7 +297,7 @@ function renderTableList(tables) {
   list.innerHTML = '';
 
   if (filteredTables.length === 0) {
-    list.innerHTML = '<p style="color:var(--text-muted);font-size:12px;padding:8px">No matching tables found.</p>';
+    list.innerHTML = `<p style="color:var(--text-muted);font-size:12px;padding:8px">${escHtml(search ? 'No tables match your current search.' : tableListEmptyMessage)}</p>`;
   } else {
     filteredTables.forEach(t => {
       const item = document.createElement('div');
@@ -247,9 +321,7 @@ function renderTableList(tables) {
           ${escHtml(healthLabel)} ${profile.score !== undefined ? escHtml(profile.score) + '%' : ''}
         </span>
       `;
-      if (usable) {
-        item.addEventListener('click', () => selectTable(t, item));
-      }
+      item.addEventListener('click', () => selectTable(t, item));
       list.appendChild(item);
     });
   }
@@ -318,7 +390,7 @@ async function loadAnalytics(tableName) {
   } catch (e) {
     loading.classList.add('d-none');
     empty.classList.remove('d-none');
-    empty.querySelector('p').textContent = 'Failed to load analytics.';
+    empty.querySelector('p').textContent = e.message || 'Failed to load analytics.';
   }
 }
 
@@ -389,14 +461,18 @@ function renderCharts(data) {
   const grid = document.getElementById('chartsGrid');
   grid.innerHTML = '';
   appendQualityCard(grid, data);
+  const themeColors = getThemeColors();
+  const textColor = cssVar('--text-secondary') || '#8892a4';
+  const gridColor = cssVar('--border') || '#252a38';
+  const surfaceColor = cssVar('--bg-surface') || '#111318';
 
   const chartDefaults = {
     plugins: {
-      legend: { labels: { color: '#8892a4', font: { family: 'DM Mono', size: 11 } } }
+      legend: { labels: { color: textColor, font: { family: 'DM Mono', size: 11 } } }
     },
     scales: {
-      x: { ticks: { color: '#8892a4', font: { family: 'DM Mono', size: 10 } }, grid: { color: '#252a38' } },
-      y: { ticks: { color: '#8892a4', font: { family: 'DM Mono', size: 10 } }, grid: { color: '#252a38' } }
+      x: { ticks: { color: textColor, font: { family: 'DM Mono', size: 10 } }, grid: { color: gridColor } },
+      y: { ticks: { color: textColor, font: { family: 'DM Mono', size: 10 } }, grid: { color: gridColor } }
     }
   };
 
@@ -410,9 +486,9 @@ function renderCharts(data) {
       data: {
         labels: data.numericStats.map(n => n.column),
         datasets: [
-          { label: 'Smallest Value', data: data.numericStats.map(n => n.min), backgroundColor: '#4d9fff44', borderColor: '#4d9fff', borderWidth: 1.5 },
-          { label: 'Average Value', data: data.numericStats.map(n => n.avg), backgroundColor: '#00e5a044', borderColor: '#00e5a0', borderWidth: 1.5 },
-          { label: 'Largest Value', data: data.numericStats.map(n => n.max), backgroundColor: '#ffd16644', borderColor: '#ffd166', borderWidth: 1.5 }
+          { label: 'Smallest Value', data: data.numericStats.map(n => n.min), backgroundColor: withAlpha(themeColors[1], '44'), borderColor: themeColors[1], borderWidth: 1.5 },
+          { label: 'Average Value', data: data.numericStats.map(n => n.avg), backgroundColor: withAlpha(themeColors[0], '44'), borderColor: themeColors[0], borderWidth: 1.5 },
+          { label: 'Largest Value', data: data.numericStats.map(n => n.max), backgroundColor: withAlpha(themeColors[2], '44'), borderColor: themeColors[2], borderWidth: 1.5 }
         ]
       },
       options: { ...chartDefaults, responsive: true }
@@ -425,16 +501,15 @@ function renderCharts(data) {
     const card = makeChartCard(`Distribution - ${cat.column}`);
     grid.appendChild(card);
     const ctx = card.querySelector('canvas').getContext('2d');
-    const colors = ['#00e5a0','#4d9fff','#ffd166','#ff6b6b','#c77dff','#06d6a0','#ef476f','#ffd166','#118ab2','#073b4c'];
     charts['category'] = new Chart(ctx, {
       type: 'doughnut',
       data: {
         labels: cat.data.map(d => String(d.label).slice(0, 20)),
-        datasets: [{ data: cat.data.map(d => d.count ?? d.item_count), backgroundColor: colors, borderColor: '#111318', borderWidth: 2 }]
+        datasets: [{ data: cat.data.map(d => d.count ?? d.item_count), backgroundColor: themeColors, borderColor: surfaceColor, borderWidth: 2 }]
       },
       options: {
         responsive: true,
-        plugins: { legend: { position: 'right', labels: { color: '#8892a4', font: { family: 'DM Mono', size: 11 }, padding: 12 } } }
+        plugins: { legend: { position: 'right', labels: { color: textColor, font: { family: 'DM Mono', size: 11 }, padding: 12 } } }
       }
     });
   }
@@ -452,10 +527,10 @@ function renderCharts(data) {
         datasets: [{
           label: ts.valueColumn,
           data: ts.data.map(d => d.total),
-          borderColor: '#00e5a0',
-          backgroundColor: '#00e5a015',
+          borderColor: themeColors[0],
+          backgroundColor: withAlpha(themeColors[0], '15'),
           borderWidth: 2,
-          pointBackgroundColor: '#00e5a0',
+          pointBackgroundColor: themeColors[0],
           pointRadius: 3,
           fill: true,
           tension: 0.3
@@ -478,9 +553,9 @@ function renderCharts(data) {
           label: 'Sum',
           data: data.numericStats.map(n => n.sum),
           backgroundColor: data.numericStats.map((_, i) =>
-            ['#00e5a044','#4d9fff44','#ffd16644','#ff6b6b44','#c77dff44','#06d6a044'][i % 6]),
+            withAlpha(themeColors[i % themeColors.length], '44')),
           borderColor: data.numericStats.map((_, i) =>
-            ['#00e5a0','#4d9fff','#ffd166','#ff6b6b','#c77dff','#06d6a0'][i % 6]),
+            themeColors[i % themeColors.length]),
           borderWidth: 1.5
         }]
       },
@@ -603,12 +678,22 @@ function tablePayload(table) {
   return { schema: table.schema, name: table.name, label: tableLabel(table) };
 }
 async function post(url, body) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  return res.json();
+  let res;
+  try {
+    res = await fetch(apiUrl(url), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch (error) {
+    throw new Error(window.location.protocol === 'file:' ? 'This page was opened as a file. Open http://127.0.0.1:3000 instead, or restart DataLens so it serves the app through the local backend.' : 'DataLens backend is not reachable. Restart DataLens or run the local server on http://127.0.0.1:3000.');
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error || `Request failed with status ${res.status}.`);
+  }
+  return data;
 }
 
 
@@ -667,7 +752,7 @@ async function loadSmartInsights(tableName) {
     console.error('Smart Insights Error:', e);
     loading.classList.add('d-none');
     empty.classList.remove('d-none');
-    empty.querySelector('p').textContent = 'Failed to generate Smart Insights.';
+    empty.querySelector('p').textContent = e.message || 'Failed to generate Smart Insights.';
   }
 }
 
@@ -751,7 +836,7 @@ async function exportInsightsPdf() {
   if (!smartInsightsResult?.summary || !selectedTable) return;
 
   try {
-    const res = await fetch('/api/analytics/export-pdf', {
+    const res = await fetch(apiUrl('/api/analytics/export-pdf'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -803,6 +888,7 @@ function cleanInsightText(value) {
 }
 function renderSmartInsights(data) {
   const summary = data.summary;
+  const themeColors = getThemeColors();
   const mode = summary.mode || insightMode || 'executive';
   const modeLabel = summary.modeLabel || insightModeLabel(mode);
 
@@ -846,7 +932,7 @@ function renderSmartInsights(data) {
     metricsCard.classList.remove('d-none');
 
     metricsContent.innerHTML = '';
-    const colors = ['#00e5a0', '#4d9fff', '#ffd166'];
+    const colors = [themeColors[0], themeColors[1], themeColors[2]];
     summary.keyMetrics.forEach((m, idx) => {
       const card = document.createElement('div');
       card.className = 'metric-item';
@@ -893,7 +979,7 @@ function renderSmartInsights(data) {
     let html = '<div class="trends-list">';
     summary.trends.forEach(t => {
       const icon = t.direction === 'upward' ? '&uarr;' : '&darr;';
-      const color = t.direction === 'upward' ? '#00e5a0' : '#ff6b6b';
+      const color = t.direction === 'upward' ? themeColors[0] : themeColors[3];
       html += `
         <div class="trend-item" style="border-left-color: ${color}">
           <span style="font-size: 18px; color: ${color}">${icon}</span>
@@ -933,8 +1019,8 @@ function renderSmartInsights(data) {
 
     let html = '<div class="recommendations-list" style="padding: 12px;">';
     summary.recommendations.forEach(r => {
-      html += `<div style="margin-bottom: 12px; padding: 8px; background: #1a1d2e; border-left: 3px solid #ffd166; border-radius: 4px;">
-        <i class="bi bi-lightbulb" style="color: #ffd166; margin-right: 8px;"></i>
+      html += `<div style="margin-bottom: 12px; padding: 8px; background: var(--bg-hover); border-left: 3px solid var(--accent4); border-radius: 4px;">
+        <i class="bi bi-lightbulb" style="color: var(--accent4); margin-right: 8px;"></i>
         ${escHtml(cleanInsightText(r))}
       </div>`;
     });
@@ -1060,7 +1146,7 @@ function displayColumnAnalysis(analysis) {
 
   if (analysis.insights && analysis.insights.length > 0) {
     html += '<h4 style="margin-top: 12px; margin-bottom: 8px;">Insights</h4>';
-    html += '<ul style="margin-left: 16px; color: #cfd6e4;">';
+    html += '<ul class="column-insight-list">';
     analysis.insights.forEach(item => {
       html += `<li>${escHtml(cleanInsightText(item))}</li>`;
     });
@@ -1086,12 +1172,12 @@ function displayColumnAnalysis(analysis) {
     html += `<h4 style="margin-top: 16px; margin-bottom: 8px;">Anomalies Detected (${analysis.anomalies.length})</h4>`;
     html += '<div style="max-height: 200px; overflow-y: auto;">';
     analysis.anomalies.slice(0, 10).forEach(a => {
-      html += `<div style="padding: 8px; background: #1a1d2e; margin-bottom: 4px; border-radius: 3px;">
+      html += `<div style="padding: 8px; background: var(--bg-hover); margin-bottom: 4px; border-radius: 3px;">
         Value: <strong>${fmt(a.value)}</strong> (Z-Score: ${a.zScore.toFixed(2)})
       </div>`;
     });
     if (analysis.anomalies.length > 10) {
-      html += `<div style="color: #8892a4; font-size: 12px; padding: 8px;">... and ${analysis.anomalies.length - 10} more</div>`;
+      html += `<div class="analysis-muted-note">... and ${analysis.anomalies.length - 10} more</div>`;
     }
     html += '</div>';
   }

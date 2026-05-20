@@ -2,9 +2,8 @@ import re
 from typing import Any, Dict, List
 
 SENSITIVE_KEYWORDS = [
-    'user', 'password', 'auth', 'credential', 'token',
-    'admin', 'role', 'permission', 'secret', 'session',
-    'audit', 'log', 'hash', 'salt'
+    'password', 'credential', 'token', 'secret',
+    'session', 'hash', 'salt'
 ]
 TABLE_NAME_PATTERN = re.compile(r'^[\w.\-]+$')
 NUMERIC_TYPES = {

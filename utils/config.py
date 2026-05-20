@@ -45,7 +45,7 @@ class Config:
     DB_CONNECTION_TIMEOUT = get_env_int('DB_CONNECTION_TIMEOUT', 10)
     
     # API Configuration
-    CORS_ORIGINS = get_env('CORS_ORIGINS', 'http://localhost:3000').split(',')
+    CORS_ORIGINS = [origin.strip() for origin in get_env('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000,null').split(',') if origin.strip()]
     MAX_REQUEST_SIZE = get_env_int('MAX_REQUEST_SIZE', 10 * 1024 * 1024)  # 10MB
     REQUEST_TIMEOUT = get_env_int('REQUEST_TIMEOUT', 30)  # seconds
     

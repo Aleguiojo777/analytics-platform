@@ -437,12 +437,27 @@ def get_table_analytics():
             row = cursor.fetchone()
             total_rows = extract_row_value(row, 0) or 0
             
-            if total_rows == 0:
-                return jsonify({'warning': 'Table is empty. Analytics will be limited.', 'totalRows': 0})
-
             columns = load_columns(cursor, table_ref, db_type)
             if not columns:
                 raise ValueError('Table has no columns.')
+
+            if total_rows == 0:
+                profile = table_analytics_profile(table_ref['label'], columns, total_rows)
+                return jsonify({
+                    'warning': 'Table is empty. Analytics will be limited.',
+                    'tableName': table_ref['label'],
+                    'tableRef': {'schema': table_ref['schema'], 'name': table_ref['name'], 'label': table_ref['label']},
+                    'totalRows': 0,
+                    'columns': columns,
+                    'numericStats': [],
+                    'categoryData': None,
+                    'timeSeriesData': None,
+                    'categoryProfiles': [],
+                    'columnQuality': [],
+                    'completenessScore': 0,
+                    'profile': profile,
+                    'sampleRows': []
+                })
             
             # Get sample rows
             if db_type == 'mysql':
@@ -469,8 +484,6 @@ def get_table_analytics():
                 cleaned_sample_rows = rows_to_dicts(cursor, cursor.fetchall())
 
             profile = table_analytics_profile(table_ref['label'], columns, total_rows)
-            if not profile['usable']:
-                raise ValueError(f"Selected table is not analytics-ready: {profile['reason']}.")
 
             numeric_cols = [c for c in columns if c['DATA_TYPE'] in NUMERIC_TYPES]
             date_cols = [c for c in columns if c['DATA_TYPE'] in DATE_TYPES]
@@ -733,9 +746,6 @@ def get_executive_summary():
 
             columns = load_columns(cursor, table_ref, db_type)
             profile = table_analytics_profile(table_ref['label'], columns, total_rows)
-            if not profile['usable']:
-                raise ValueError(f"Selected table is not analytics-ready: {profile['reason']}.")
-                
             numeric_cols = [c for c in columns if c['DATA_TYPE'] in NUMERIC_TYPES]
             numeric_cols = [c for c in numeric_cols if not is_id_column(c['COLUMN_NAME'])] or numeric_cols
             date_cols = [c for c in columns if c['DATA_TYPE'] in DATE_TYPES]

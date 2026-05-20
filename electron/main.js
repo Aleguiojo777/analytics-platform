@@ -204,7 +204,7 @@ async function spawnBackend(port) {
     ...process.env,
     PORT: String(port),
     FLASK_DEBUG: '',
-    CORS_ORIGINS: `http://localhost:${port},http://127.0.0.1:${port}`
+    CORS_ORIGINS: `http://localhost:${port},http://127.0.0.1:${port},null`
   };
 
   const errors = [];

@@ -38,6 +38,18 @@ class TableAnalyticsProfileTests(unittest.TestCase):
 
         self.assertEqual(filter_sensitive_tables(table_names), table_names)
 
+    def test_user_id_columns_do_not_block_business_tables(self):
+        columns = [
+            {'COLUMN_NAME': 'UserId', 'DATA_TYPE': 'int'},
+            {'COLUMN_NAME': 'Amount', 'DATA_TYPE': 'decimal'},
+            {'COLUMN_NAME': 'Region', 'DATA_TYPE': 'nvarchar'},
+        ]
+
+        profile = table_analytics_profile('dbo.SalesByUser', columns, row_count=25)
+
+        self.assertTrue(profile['usable'])
+        self.assertEqual(filter_sensitive_tables(['dbo.Users']), ['dbo.Users'])
+
 
 class DatabaseConnectionStringTests(unittest.TestCase):
     def test_trust_server_certificate_respects_checkbox_when_encrypting(self):
