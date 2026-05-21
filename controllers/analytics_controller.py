@@ -718,6 +718,8 @@ def get_executive_summary():
     payload = request.get_json(force=True, silent=True) or {}
     insight_mode = normalize_insight_mode(payload.get('insightMode'))
     use_ai_insights = bool(payload.get('useAiInsights') or payload.get('insightEngine') == 'ai')
+    # Per-request opt-out for local LLM: if explicitly False, skip local LLM calls
+    use_local_llm_flag = payload.get('useLocalLLM')  # None/True/False
 
     db_type = request_db_type(payload)
     parsed, error_response = parse_requested_table(payload, db_type)
@@ -760,7 +762,7 @@ def get_executive_summary():
                 }
                 summary = apply_insight_mode(summary, insight_mode, profile, numeric_cols, date_cols, text_cols, [])
                 summary['insightEngine'] = 'smart'
-                if use_ai_insights:
+                if use_ai_insights and use_local_llm_flag is not False:
                     summary = enrich_summary_with_local_llm(table_ref['label'], summary, profile, numeric_cols, date_cols, text_cols, [])
                     summary['insightEngine'] = 'ai' if summary.get('llmStatus', '').startswith('Generated locally') else 'smart'
                 summary = attach_analysis_scope(summary, profile, numeric_cols, date_cols, text_cols, [], use_ai_insights)
@@ -859,7 +861,7 @@ def get_executive_summary():
 
             exec_summary = apply_insight_mode(exec_summary, insight_mode, profile, numeric_cols, date_cols, text_cols, analyses)
             exec_summary['insightEngine'] = 'smart'
-            if use_ai_insights:
+            if use_ai_insights and use_local_llm_flag is not False:
                 exec_summary = enrich_summary_with_local_llm(table_ref['label'], exec_summary, profile, numeric_cols, date_cols, text_cols, analyses)
                 exec_summary['insightEngine'] = 'ai' if exec_summary.get('llmStatus', '').startswith('Generated locally') else 'smart'
                 analyses = apply_local_llm_column_insights(analyses, exec_summary)

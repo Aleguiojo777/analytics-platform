@@ -6,11 +6,39 @@ Ollama is not installed, not running, or too slow for the current machine.
 
 import json
 import re
+import time
+import hashlib
+import threading
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List, Optional
 
 from utils.config import Config
+
+import logging
+try:
+    import jsonschema  # type: ignore[reportMissingModuleSource]
+    _HAVE_JSONSCHEMA = True
+except Exception:
+    _HAVE_JSONSCHEMA = False
+
+logger = logging.getLogger(__name__)
+
+# Simple in-process cache: prompt_hash -> (ts, response_str)
+_llm_cache: Dict[str, tuple] = {}
+_llm_cache_lock = threading.Lock()
+
+# Circuit breaker state
+_llm_last_failure = 0.0
+_llm_failure_count = 0
+
+# Simple metrics
+_llm_metrics = {
+    'calls': 0,
+    'errors': 0,
+    'cache_hits': 0,
+    'validation_failures': 0,
+}
 
 
 MAX_ITEMS = 8
@@ -155,6 +183,36 @@ def build_insight_prompt(
         'anomalyTasks': anomaly_tasks,
         'columnAnalyses': compact_analyses,
     }
+    # Harden payload: sanitize strings and limit overall size
+    def _sanitize_obj(obj, field_limit=Config.LOCAL_LLM_MAX_FIELD_CHARS):
+        if isinstance(obj, str):
+            s = obj.replace('\r\n', '\n')
+            return s[:field_limit]
+        if isinstance(obj, list):
+            return [_sanitize_obj(x, field_limit) for x in obj][:MAX_ITEMS]
+        if isinstance(obj, dict):
+            out = {}
+            for k, v in obj.items():
+                if isinstance(v, (str, list, dict)):
+                    out[k] = _sanitize_obj(v, field_limit)
+                else:
+                    out[k] = v
+            return out
+        return obj
+
+    try:
+        sanitized_payload = _sanitize_obj(payload)
+        payload_json = json.dumps(sanitized_payload, ensure_ascii=True)
+        if len(payload_json) > Config.LOCAL_LLM_MAX_PROMPT_CHARS:
+            # aggressively trim long lists/fields and re-serialize
+            payload = sanitized_payload
+            # Trim large arrays in place
+            for key in ('columnAnalyses', 'anomalyTasks', 'computedObservations', 'computedRecommendations', 'trends', 'anomalies'):
+                if isinstance(payload.get(key), list):
+                    payload[key] = payload[key][:max(1, int(Config.LOCAL_LLM_MAX_PROMPT_CHARS / 2000))]
+            payload_json = json.dumps(payload, ensure_ascii=True)
+    except Exception:
+        payload_json = json.dumps(payload, ensure_ascii=True)
     schema = {
         'narrativeText': 'A cohesive narrative in exactly two short paragraphs separated by a blank line. Do not use bullets, numbering, labels, or headings inside this value.',
         'keyObservations': ['3 to 6 concise observations, each tied to a metric, column, trend, anomaly, or data-quality signal.'],
@@ -194,7 +252,7 @@ def build_insight_prompt(
         f'Audience: {guidance["audience"]}. Goal: {guidance["goal"]}. '
         f'Writing rules: {json.dumps(writing_rules, ensure_ascii=True)} '
         f'Match this JSON schema exactly: {json.dumps(schema, ensure_ascii=True)}\n\n'
-        f'Data:\n{json.dumps(payload, ensure_ascii=True)}'
+        f'Data:\n{payload_json}'
     )
 
 
@@ -223,6 +281,121 @@ def ask_ollama(prompt: str) -> str:
     with urllib.request.urlopen(request, timeout=Config.LOCAL_LLM_TIMEOUT) as response:
         data = json.loads(response.read().decode('utf-8'))
     return str((data.get('message') or {}).get('content') or '').strip()
+
+
+def _prompt_hash(prompt: str) -> str:
+    return hashlib.sha256(prompt.encode('utf-8')).hexdigest()
+
+
+def _get_cached_response(key: str, ttl: int) -> Optional[str]:
+    now = time.time()
+    with _llm_cache_lock:
+        item = _llm_cache.get(key)
+        if not item:
+            return None
+        ts, value = item
+        if ttl and (now - ts) > ttl:
+            del _llm_cache[key]
+            return None
+        return value
+
+
+def _set_cached_response(key: str, value: str) -> None:
+    with _llm_cache_lock:
+        _llm_cache[key] = (time.time(), value)
+
+
+def _is_cooled_down() -> bool:
+    if Config.LOCAL_LLM_COOLDOWN_SEC <= 0:
+        return True
+    return (time.time() - _llm_last_failure) > Config.LOCAL_LLM_COOLDOWN_SEC
+
+
+def _inc_metric(name: str) -> None:
+    if not Config.LOCAL_LLM_ENABLE_METRICS:
+        return
+    try:
+        _llm_metrics[name] = _llm_metrics.get(name, 0) + 1
+    except Exception:
+        pass
+
+
+def _validate_llm_output(parsed: Dict[str, Any]) -> bool:
+    # Minimal schema validation: require main keys
+    required_keys = {'narrativeText', 'keyObservations', 'recommendations', 'reportSections', 'columnInsights', 'anomalyInsights'}
+    if not isinstance(parsed, dict):
+        return False
+    if not required_keys.issubset(set(parsed.keys())):
+        return False
+    if _HAVE_JSONSCHEMA:
+        try:
+            schema = {
+                'type': 'object',
+                'properties': {
+                    'narrativeText': {'type': 'string'},
+                    'keyObservations': {'type': 'array'},
+                    'recommendations': {'type': 'array'},
+                    'reportSections': {'type': 'array'},
+                    'columnInsights': {'type': 'array'},
+                    'anomalyInsights': {'type': 'array'},
+                },
+                'required': list(required_keys),
+            }
+            jsonschema.validate(instance=parsed, schema=schema)
+            return True
+        except Exception as e:
+            logger.debug('jsonschema validation failed: %s', e)
+            return False
+    # Fallback: basic structural checks passed
+    return True
+
+
+def ask_ollama_with_resilience(prompt: str, cache_ttl: int = None) -> str:
+    """Call the local LLM with caching, retries, backoff, and simple circuit-breaker."""
+    _inc_metric('calls')
+    key = _prompt_hash(prompt)
+    ttl = cache_ttl if cache_ttl is not None else Config.LOCAL_LLM_CACHE_TTL
+    try:
+        cached = _get_cached_response(key, ttl)
+        if cached is not None:
+            _inc_metric('cache_hits')
+            logger.debug('LLM cache hit')
+            return cached
+    except Exception:
+        logger.exception('LLM cache read failed')
+
+    global _llm_last_failure, _llm_failure_count
+    if not _is_cooled_down():
+        _inc_metric('errors')
+        raise OSError('Local LLM is in cooldown due to recent failures')
+
+    last_err = None
+    for attempt in range(max(1, Config.LOCAL_LLM_MAX_RETRIES + 1)):
+        try:
+            start = time.time()
+            result = ask_ollama(prompt)
+            latency = time.time() - start
+            logger.info('LLM call success (latency=%.2fs)', latency)
+            _llm_failure_count = 0
+            _llm_last_failure = 0.0
+            # cache and return
+            try:
+                _set_cached_response(key, result)
+            except Exception:
+                logger.debug('Failed to set LLM cache')
+            return result
+        except Exception as e:
+            last_err = e
+            _inc_metric('errors')
+            _llm_failure_count += 1
+            _llm_last_failure = time.time()
+            backoff = Config.LOCAL_LLM_RETRY_BACKOFF_SEC * (2 ** attempt)
+            logger.warning('LLM call failed (attempt %d): %s — backing off %.1fs', attempt + 1, e, backoff)
+            time.sleep(backoff)
+
+    # all attempts failed
+    logger.error('Local LLM unavailable after retries: %s', last_err)
+    raise last_err
 
 
 def parse_llm_json(text: str) -> Dict[str, Any]:
@@ -411,10 +584,15 @@ def apply_local_llm_anomaly_insights(analyses: List[Dict[str, Any]], summary: Di
 
 def ask_ollama_for_insight_json(prompt: str) -> Dict[str, Any]:
     """Ask Ollama for JSON and give it one chance to repair malformed output."""
-    first_response = ask_ollama(prompt)
+    first_response = ask_ollama_with_resilience(prompt)
     try:
-        return parse_llm_json(first_response)
+        parsed = parse_llm_json(first_response)
+        if not _validate_llm_output(parsed):
+            _inc_metric('validation_failures')
+            raise ValueError('LLM output failed schema validation')
+        return parsed
     except (ValueError, json.JSONDecodeError) as first_error:
+        _inc_metric('errors')
         repair_prompt = (
             'The previous response was not valid JSON. Return the same analytics content as valid JSON only. '
             'Use this exact object shape: {"narrativeText":"...","keyObservations":["..."],'
@@ -422,7 +600,12 @@ def ask_ollama_for_insight_json(prompt: str) -> Dict[str, Any]:
             '"columnInsights":[{"column":"...","insights":["..."]}],"anomalyInsights":[{"column":"...","rowIndex":0,"impact":"...","likelyCauses":["..."],"validationChecks":["..."],"fixSteps":["..."],"businessQuestions":["..."],"decisionGuide":["..."]}]}. '
             f'Invalid response to repair:\n{first_response}\n\nParser error: {first_error}'
         )
-        return parse_llm_json(ask_ollama(repair_prompt))
+        repaired = ask_ollama_with_resilience(repair_prompt)
+        parsed2 = parse_llm_json(repaired)
+        if not _validate_llm_output(parsed2):
+            _inc_metric('validation_failures')
+            raise ValueError('Repaired LLM output failed schema validation')
+        return parsed2
 
 
 def _compact_anomaly_tasks(analyses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -557,5 +740,6 @@ def enrich_summary_with_local_llm(
     if anomaly_insights:
         enriched['llmAnomalyInsights'] = anomaly_insights
 
-    enriched['llmStatus'] = f'Generated locally with {Config.LOCAL_LLM_MODEL}'
+    metrics = {k: _llm_metrics.get(k, 0) for k in ('calls', 'errors', 'cache_hits', 'validation_failures')}
+    enriched['llmStatus'] = f'Generated locally with {Config.LOCAL_LLM_MODEL} (metrics: {metrics})'
     return enriched

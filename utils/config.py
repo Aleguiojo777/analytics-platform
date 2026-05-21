@@ -99,6 +99,16 @@ class Config:
     LOCAL_LLM_URL = get_env('LOCAL_LLM_URL', 'http://127.0.0.1:11434/api/chat')
     LOCAL_LLM_MODEL = get_env('LOCAL_LLM_MODEL', 'llama3.2:3b')
     LOCAL_LLM_TIMEOUT = get_env_int('LOCAL_LLM_TIMEOUT', 45)
+    # Local LLM resilience and behavior
+    LOCAL_LLM_MAX_RETRIES = get_env_int('LOCAL_LLM_MAX_RETRIES', 2)
+    LOCAL_LLM_RETRY_BACKOFF_SEC = int(get_env('LOCAL_LLM_RETRY_BACKOFF_SEC', '1'))
+    LOCAL_LLM_CACHE_TTL = get_env_int('LOCAL_LLM_CACHE_TTL', 24 * 3600)  # seconds
+    LOCAL_LLM_COOLDOWN_SEC = get_env_int('LOCAL_LLM_COOLDOWN_SEC', 60)  # cooldown after repeated failures
+    LOCAL_LLM_ENABLE_METRICS = get_env_bool('LOCAL_LLM_ENABLE_METRICS', True)
+    LOCAL_LLM_FALLBACK_POLICY = get_env('LOCAL_LLM_FALLBACK_POLICY', 'prefer_computed')
+    # Prompt hardening
+    LOCAL_LLM_MAX_PROMPT_CHARS = get_env_int('LOCAL_LLM_MAX_PROMPT_CHARS', 20000)
+    LOCAL_LLM_MAX_FIELD_CHARS = get_env_int('LOCAL_LLM_MAX_FIELD_CHARS', 1200)
     
     # Logging
     LOG_LEVEL = get_env('LOG_LEVEL', 'INFO')
