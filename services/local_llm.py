@@ -156,7 +156,7 @@ def build_insight_prompt(
         'columnAnalyses': compact_analyses,
     }
     schema = {
-        'narrativeText': 'Two short paragraphs. First: evidence summary. Second: what to do next and uncertainty.',
+        'narrativeText': 'A cohesive narrative in exactly two short paragraphs separated by a blank line. Do not use bullets, numbering, labels, or headings inside this value.',
         'keyObservations': ['3 to 6 concise observations, each tied to a metric, column, trend, anomaly, or data-quality signal.'],
         'recommendations': ['3 to 6 practical next steps. Use verbs like validate, compare, monitor, segment, confirm.'],
         'reportSections': [
@@ -183,6 +183,7 @@ def build_insight_prompt(
         'Do not invent rows, dates, customers, products, departments, causes, or external events.',
         'When cause is uncertain, write it as a hypothesis to validate, not as fact.',
         'Prefer concrete numeric evidence from the payload over generic advice.',
+        'Write narrativeText as prose paragraphs, not bullets or a list.',
         'Do not mention SQL, JSON, prompts, or the fact that you are an AI.',
         'Return valid JSON only, with no markdown fences or commentary.',
         'Return columnInsights for every item in columnAnalyses.',
@@ -244,6 +245,25 @@ def _text(value: Any, limit: int = 1200) -> str:
     result = re.sub(r'^[\s\-*:;,.]+', '', result)
     result = re.sub(r'\s+', ' ', result)
     return result[:limit].strip()
+
+
+def _narrative_text(value: Any, limit: int = 1600) -> str:
+    """Clean narrative prose while preserving paragraph breaks."""
+    if isinstance(value, list):
+        raw = '\n\n'.join(str(item).strip() for item in value if str(item).strip())
+    else:
+        raw = str(value or '')
+    raw = raw.replace('\r\n', '\n').replace('\r', '\n').strip()
+    raw = re.sub(r'^[\s\-*:;,.]+', '', raw)
+    paragraphs = []
+    for paragraph in re.split(r'\n\s*\n+', raw):
+        cleaned = re.sub(r'\s+', ' ', paragraph).strip()
+        cleaned = re.sub(r'^(?:narrative|summary|paragraph\s*\d+)\s*[:\-]\s*', '', cleaned, flags=re.IGNORECASE)
+        if cleaned:
+            paragraphs.append(cleaned)
+    if not paragraphs and raw:
+        paragraphs = [re.sub(r'\s+', ' ', raw).strip()]
+    return '\n\n'.join(paragraphs)[:limit].strip()
 
 
 def _dedupe(items: List[str]) -> List[str]:
@@ -510,7 +530,7 @@ def enrich_summary_with_local_llm(
         enriched['llmStatus'] = f'Local LLM unavailable: {error}'
         return enriched
 
-    narrative = _text(llm_content.get('narrativeText'))
+    narrative = _narrative_text(llm_content.get('narrativeText'))
     observations = _string_list(llm_content.get('keyObservations'), 6)
     recommendations = _string_list(llm_content.get('recommendations'), 8)
     sections = _report_sections(llm_content.get('reportSections'))

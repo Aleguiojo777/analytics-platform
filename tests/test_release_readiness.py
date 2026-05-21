@@ -1,7 +1,8 @@
 import unittest
 
 from services.analytics_insights import analyze_anomalies_detailed, detect_anomalies, generate_executive_summary
-from services.local_llm import apply_local_llm_anomaly_insights, apply_local_llm_column_insights, build_insight_prompt, enrich_summary_with_local_llm, parse_llm_json
+from services.local_llm import _narrative_text, apply_local_llm_anomaly_insights, apply_local_llm_column_insights, build_insight_prompt, enrich_summary_with_local_llm, parse_llm_json
+from controllers.analytics_controller import attach_analysis_scope
 from controllers.db_controller import build_connection_string, friendly_connection_error
 from utils.config import Config
 from utils.table_filter import filter_sensitive_tables, table_analytics_profile
@@ -149,6 +150,20 @@ class InsightRecommendationTests(unittest.TestCase):
         ])
         self.assertEqual(summary['recommendations'], [])
 
+    def test_analysis_scope_explains_ai_fallback_and_coverage(self):
+        summary = attach_analysis_scope(
+            {},
+            {'rowCount': 24, 'columnCount': 5},
+            [{'COLUMN_NAME': 'Revenue'}],
+            [{'COLUMN_NAME': 'OrderDate'}],
+            [{'COLUMN_NAME': 'Region'}],
+            [{'column': 'Revenue'}],
+            use_ai_insights=True,
+        )
+
+        self.assertEqual(summary['analysisScope']['rows'], 24)
+        self.assertEqual(summary['analysisScope']['analyzedColumns'], 1)
+        self.assertIn('AI Analysis was requested', summary['llmStatus'])
 class LocalLLMIntegrationTests(unittest.TestCase):
     def test_local_llm_is_disabled_by_default_without_changing_summary(self):
         original_enabled = Config.ENABLE_LOCAL_LLM
@@ -192,6 +207,12 @@ class LocalLLMIntegrationTests(unittest.TestCase):
         parsed = parse_llm_json('```json\n{"recommendations":["Review totals"]}\n```')
 
         self.assertEqual(parsed['recommendations'], ['Review totals'])
+
+    def test_local_llm_narrative_preserves_paragraphs(self):
+        narrative = _narrative_text('Narrative: Revenue varies widely.\n\nValidate the outlier before reporting.')
+
+        self.assertIn('\n\n', narrative)
+        self.assertTrue(narrative.startswith('Revenue varies widely.'))
     def test_local_llm_anomaly_insights_replace_rule_text(self):
         analyses = [{
             'column': 'Revenue',

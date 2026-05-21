@@ -759,6 +759,9 @@ async function loadSmartInsights(tableName) {
   resetSmartInsightCards();
   content.classList.add('d-none');
   empty.classList.add('d-none');
+  insightEngine = document.getElementById('insightEngineSelector')?.value || insightEngine || 'smart';
+  const loadingText = loading?.querySelector('p');
+  if (loadingText) loadingText.textContent = insightEngine === 'ai' ? 'AI Analysis is writing insights locally. This can take a moment...' : 'Analyzing data...';
   loading.classList.remove('d-none');
 
   try {
@@ -827,11 +830,11 @@ function buildInsightsReport() {
     `# DataLens Insight Engine Report`,
     ``,
     `**Table:** ${tableLabel(selectedTable)}`,
+    `**Engine:** ${summary.insightEngine === 'ai' ? 'AI Analysis' : 'Smart Analysis'}`,
     `**Mode:** ${modeLabel}`,
     `**Generated:** ${new Date().toLocaleString()}`,
     ``
   ];
-
   if (summary.narrativeText) {
     lines.push(`## Narrative`, summary.narrativeText, ``);
   }
@@ -861,7 +864,7 @@ function exportInsightsMarkdown() {
   const tableName = tableLabel(selectedTable).replace(/[^a-z0-9_-]+/gi, '_') || 'table';
   const mode = (smartInsightsResult?.summary?.mode || insightMode || 'executive').replace(/[^a-z0-9_-]+/gi, '_');
   a.href = url;
-  a.download = `${tableName}_${mode}_smart_insights.md`;
+  a.download = `${tableName}_${mode}_insight_engine.md`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -894,7 +897,7 @@ async function exportInsightsPdf() {
     const tableName = tableLabel(selectedTable).replace(/[^a-z0-9_-]+/gi, '_') || 'table';
     const mode = (smartInsightsResult.summary.mode || insightMode || 'executive').replace(/[^a-z0-9_-]+/gi, '_');
     a.href = url;
-    a.download = `${tableName}_${mode}_smart_insights.pdf`;
+    a.download = `${tableName}_${mode}_insight_engine.pdf`;
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -922,6 +925,33 @@ function cleanInsightText(value) {
     .replace(/[\uD800-\uDFFF]/g, '')
     .trim();
 }
+function insightStatusClass(status) {
+  const value = String(status || '').toLowerCase();
+  if (value.includes('generated locally')) return 'ok';
+  if (value.includes('disabled') || value.includes('unavailable')) return 'warn';
+  return 'neutral';
+}
+function renderAnalysisScope(summary) {
+  const scope = summary.analysisScope || {};
+  const analyzedNames = Array.isArray(scope.analyzedColumnNames) && scope.analyzedColumnNames.length
+    ? scope.analyzedColumnNames.join(', ')
+    : 'None';
+  const items = [
+    ['Rows', scope.rows],
+    ['Columns', scope.columns],
+    ['Numeric', scope.numericColumns],
+    ['Dates', scope.dateColumns],
+    ['Text', scope.textColumns],
+    ['Analyzed', scope.analyzedColumns]
+  ];
+  let html = '<div class="analysis-scope-grid">';
+  items.forEach(([label, value]) => {
+    html += `<div class="analysis-scope-item"><span>${escHtml(label)}</span><strong>${escHtml(value ?? 0)}</strong></div>`;
+  });
+  html += '</div>';
+  html += `<div class="analysis-scope-note"><strong>Columns analyzed:</strong> ${escHtml(analyzedNames)}</div>`;
+  return html;
+}
 function renderSmartInsights(data) {
   const summary = data.summary;
   const themeColors = getThemeColors();
@@ -944,8 +974,11 @@ function renderSmartInsights(data) {
   if (summary.dataQualityScore !== undefined) {
     html += `<p><strong>Data Quality Score:</strong> ${escHtml(summary.dataQualityScore)}%</p>`;
   }
+  if (summary.analysisScope) {
+    html += renderAnalysisScope(summary);
+  }
   if (summary.llmStatus) {
-    html += `<p><strong>Local AI:</strong> ${escHtml(summary.llmStatus)}</p>`;
+    html += `<div class="local-ai-status ${insightStatusClass(summary.llmStatus)}"><strong>Local AI:</strong> ${escHtml(summary.llmStatus)}</div>`;
   }
   if (summary.narrativeText) {
     html += `<div class="narrative-text">

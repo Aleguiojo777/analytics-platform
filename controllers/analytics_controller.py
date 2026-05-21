@@ -258,6 +258,33 @@ def _analysis_columns(analyses: List[Dict[str, Any]], limit: int = 4) -> str:
     return ', '.join(names[:limit]) or 'none analyzed'
 
 
+def attach_analysis_scope(
+    summary: Dict[str, Any],
+    profile: Dict[str, Any],
+    numeric_cols: List[Dict[str, Any]],
+    date_cols: List[Dict[str, Any]],
+    text_cols: List[Dict[str, Any]],
+    analyses: List[Dict[str, Any]],
+    use_ai_insights: bool,
+) -> Dict[str, Any]:
+    """Attach transparent scope/status metadata for the Insight Engine UI."""
+    summary = dict(summary or {})
+    analyzed_columns = [str(item.get('column')) for item in analyses if item.get('column')]
+    summary['analysisScope'] = {
+        'rows': profile.get('rowCount', 0),
+        'columns': profile.get('columnCount', 0),
+        'numericColumns': len(numeric_cols),
+        'dateColumns': len(date_cols),
+        'textColumns': len(text_cols),
+        'analyzedColumns': len(analyzed_columns),
+        'analyzedColumnNames': analyzed_columns[:8],
+        'aiRequested': bool(use_ai_insights),
+    }
+    if use_ai_insights and not summary.get('llmStatus'):
+        summary['llmStatus'] = 'AI Analysis was requested, but local AI is disabled. Using Smart Analysis.'
+    return summary
+
+
 def _top_metric_lines(summary: Dict[str, Any]) -> List[str]:
     lines = []
     for metric in (summary.get('keyMetrics') or [])[:5]:
@@ -736,6 +763,7 @@ def get_executive_summary():
                 if use_ai_insights:
                     summary = enrich_summary_with_local_llm(table_ref['label'], summary, profile, numeric_cols, date_cols, text_cols, [])
                     summary['insightEngine'] = 'ai' if summary.get('llmStatus', '').startswith('Generated locally') else 'smart'
+                summary = attach_analysis_scope(summary, profile, numeric_cols, date_cols, text_cols, [], use_ai_insights)
                 return jsonify({
                     'tableName': table_ref['label'],
                     'tableRef': {'schema': table_ref['schema'], 'name': table_ref['name'], 'label': table_ref['label']},
@@ -836,6 +864,7 @@ def get_executive_summary():
                 exec_summary['insightEngine'] = 'ai' if exec_summary.get('llmStatus', '').startswith('Generated locally') else 'smart'
                 analyses = apply_local_llm_column_insights(analyses, exec_summary)
                 analyses = apply_local_llm_anomaly_insights(analyses, exec_summary)
+            exec_summary = attach_analysis_scope(exec_summary, profile, numeric_cols, date_cols, text_cols, analyses, use_ai_insights)
 
             return jsonify({
                 'tableName': table_ref['label'],
