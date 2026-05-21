@@ -12,6 +12,10 @@ let dbType = 'sqlserver';     // Database type (sqlserver or mysql)
 let insightMode = 'executive';
 let insightEngine = 'smart';
 let smartInsightsResult = null;
+const insightResultCache = new Map();
+const insightInFlight = new Map();
+let activeInsightRequestKey = '';
+let insightRequestSeq = 0;
 let currentTheme = 'industrial';
 const THEME_STORAGE_KEY = 'datalens-color-theme';
 const COLOR_THEMES = {
@@ -146,6 +150,9 @@ function resetLoadedData() {
   analyticsData = null;
   window.smartDetailedAnalysis = null;
   smartInsightsResult = null;
+  insightResultCache.clear();
+  insightInFlight.clear();
+  activeInsightRequestKey = '';
 
   Object.values(charts).forEach(c => c.destroy());
   charts = {};
@@ -751,50 +758,102 @@ function fmt(n) {
 
 
 
-async function loadSmartInsights(tableName) {
+function insightRequestKey(tableName, mode, engine) {
+  return JSON.stringify({
+    table: tableLabel(tableName),
+    mode,
+    engine,
+    cleanedMode: !!cleanedMode,
+    dbType: connInfo?.dbType || dbType
+  });
+}
+function isCurrentInsightRequest(key) {
+  const activePanel = document.getElementById('panelInsights')?.classList.contains('active');
+  return activePanel && key === activeInsightRequestKey;
+}
+async function loadSmartInsights(tableName, options = {}) {
   const loading = document.getElementById('insightsLoading');
   const content = document.getElementById('insightsContent');
   const empty = document.getElementById('insightsEmpty');
 
+  insightMode = document.getElementById('insightModeSelector')?.value || insightMode || 'executive';
+  insightEngine = document.getElementById('insightEngineSelector')?.value || insightEngine || 'smart';
+  const useAiInsights = insightEngine === 'ai';
+  const requestKey = insightRequestKey(tableName, insightMode, insightEngine);
+  activeInsightRequestKey = requestKey;
+
+  if (!options.force && insightResultCache.has(requestKey)) {
+    const cached = insightResultCache.get(requestKey);
+    smartInsightsResult = cached;
+    resetSmartInsightCards();
+    renderSmartInsights(cached);
+    loading.classList.add('d-none');
+    empty.classList.add('d-none');
+    content.classList.remove('d-none');
+    return cached;
+  }
+
   resetSmartInsightCards();
   content.classList.add('d-none');
   empty.classList.add('d-none');
-  insightEngine = document.getElementById('insightEngineSelector')?.value || insightEngine || 'smart';
   const loadingText = loading?.querySelector('p');
-  if (loadingText) loadingText.textContent = insightEngine === 'ai' ? 'AI Analysis is writing insights locally. This can take a moment...' : 'Analyzing data...';
+  if (loadingText) loadingText.textContent = useAiInsights ? 'AI Analysis is writing insights locally. This can take a moment...' : 'Analyzing data...';
   loading.classList.remove('d-none');
 
+  const requestId = ++insightRequestSeq;
+  let requestPromise = insightInFlight.get(requestKey);
+  if (!requestPromise) {
+    requestPromise = post('/api/analytics/executive-summary', {
+      connInfo,
+      dbType: connInfo?.dbType || dbType,
+      tableName: tablePayload(tableName),
+      cleanedMode,
+      insightMode,
+      insightEngine,
+      useAiInsights
+    });
+    insightInFlight.set(requestKey, requestPromise);
+  }
+
   try {
-    insightMode = document.getElementById('insightModeSelector')?.value || insightMode || 'executive';
-    insightEngine = document.getElementById('insightEngineSelector')?.value || insightEngine || 'smart';
-    const useAiInsights = insightEngine === 'ai';
-    const res = await post('/api/analytics/executive-summary', { connInfo, dbType: connInfo?.dbType || dbType, tableName: tablePayload(tableName), cleanedMode, insightMode, insightEngine, useAiInsights });
+    const res = await requestPromise;
+    insightInFlight.delete(requestKey);
+
+    if (!isCurrentInsightRequest(requestKey) || requestId !== insightRequestSeq) {
+      return res;
+    }
 
     loading.classList.add('d-none');
 
     if (res.error) {
       empty.classList.remove('d-none');
       empty.querySelector('p').textContent = res.error;
-      return;
+      return res;
     }
 
     if (!res.summary) {
       empty.classList.remove('d-none');
       empty.querySelector('p').textContent = 'No numeric data found to analyze.';
-      return;
+      return res;
     }
 
+    insightResultCache.set(requestKey, res);
     smartInsightsResult = res;
     renderSmartInsights(res);
     content.classList.remove('d-none');
+    return res;
   } catch (e) {
+    insightInFlight.delete(requestKey);
+    if (!isCurrentInsightRequest(requestKey) || requestId !== insightRequestSeq) {
+      return null;
+    }
     console.error('Insight Engine Error:', e);
     loading.classList.add('d-none');
     empty.classList.remove('d-none');
     empty.querySelector('p').textContent = e.message || 'Failed to generate insights.';
+    return null;
   }
 }
-
 function resetSmartInsightCards() {
   ['summaryCard', 'metricsCard', 'anomaliesCard', 'trendsCard', 'columnAnalysisCard', 'recommendationsCard']
     .forEach(id => document.getElementById(id)?.classList.add('d-none'));
