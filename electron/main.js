@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, shell } = require('electron');
 const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const http = require('node:http');
+const net = require('node:net');
 const path = require('node:path');
 
 const DEFAULT_PORT = 3000;
@@ -125,19 +126,62 @@ function pythonCandidates() {
   return [...new Set(candidates)];
 }
 
-function waitForServer(url, timeoutMs = START_TIMEOUT_MS) {
+function isPortAvailable(port, host = '127.0.0.1') {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.once('error', () => resolve(false));
+    server.listen(port, host, () => {
+      server.close(() => resolve(true));
+    });
+  });
+}
+
+async function findOpenPort(startPort) {
+  for (let offset = 0; offset < 50; offset += 1) {
+    const port = startPort + offset;
+    if (await isPortAvailable(port)) return port;
+  }
+  throw new Error(`No open port found starting at ${startPort}`);
+}
+
+function waitForServer(baseUrl, timeoutMs = START_TIMEOUT_MS) {
   const start = Date.now();
+  const healthUrl = `${baseUrl}/api/health`;
 
   return new Promise((resolve, reject) => {
     const check = () => {
-      const req = http.get(url, (res) => {
-        res.resume();
-        resolve();
+      if (!backendProcess) {
+        reject(new Error('The Python backend exited before it became ready.'));
+        return;
+      }
+
+      const req = http.get(healthUrl, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            if (res.statusCode === 200 && data.status === 'ok') {
+              resolve();
+              return;
+            }
+          } catch (error) {
+            appendBackendOutput(`Health check parse failed: ${error.message}`);
+          }
+
+          if (Date.now() - start > timeoutMs) {
+            reject(new Error(`Timed out waiting for DataLens backend at ${healthUrl}`));
+            return;
+          }
+          setTimeout(check, 500);
+        });
       });
 
       req.on('error', () => {
         if (Date.now() - start > timeoutMs) {
-          reject(new Error(`Timed out waiting for ${url}`));
+          reject(new Error(`Timed out waiting for DataLens backend at ${healthUrl}`));
           return;
         }
         setTimeout(check, 500);
@@ -219,8 +263,8 @@ async function spawnBackend(port) {
   const candidates = pythonCandidates();
   for (const python of candidates) {
     try {
-      await spawnCandidate(python, script, env);
-      return;
+      const child = await spawnCandidate(python, script, env);
+      return child;
     } catch (error) {
       errors.push(`${python}: ${error.message}`);
     }
@@ -230,9 +274,6 @@ async function spawnBackend(port) {
 }
 
 async function createWindow() {
-  const port = Number(process.env.PORT || DEFAULT_PORT);
-  const appUrl = `http://127.0.0.1:${port}`;
-
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
@@ -253,6 +294,10 @@ async function createWindow() {
   });
 
   try {
+    const preferredPort = Number(process.env.PORT || DEFAULT_PORT);
+    const port = await findOpenPort(preferredPort);
+    const appUrl = `http://127.0.0.1:${port}`;
+
     await spawnBackend(port);
     await waitForServer(appUrl);
     await mainWindow.loadURL(appUrl);

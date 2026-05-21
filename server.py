@@ -18,6 +18,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder='frontend', static_url_path='')
+app.config['MAX_CONTENT_LENGTH'] = Config.MAX_REQUEST_SIZE
 
 # Configure CORS with values from Config
 CORS(app, resources={r'/api/*': {'origins': Config.CORS_ORIGINS}})

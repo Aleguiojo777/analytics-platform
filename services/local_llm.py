@@ -582,6 +582,44 @@ def apply_local_llm_anomaly_insights(analyses: List[Dict[str, Any]], summary: Di
     return analyses
 
 
+def _validate_anomaly_llm_output(parsed: Dict[str, Any]) -> bool:
+    if not isinstance(parsed, dict):
+        return False
+    insights = parsed.get('anomalyInsights')
+    if not isinstance(insights, list):
+        return False
+    if _HAVE_JSONSCHEMA:
+        try:
+            schema = {
+                'type': 'object',
+                'properties': {
+                    'anomalyInsights': {
+                        'type': 'array',
+                        'items': {
+                            'type': 'object',
+                            'properties': {
+                                'column': {'type': 'string'},
+                                'rowIndex': {},
+                                'impact': {'type': 'string'},
+                                'likelyCauses': {'type': 'array'},
+                                'validationChecks': {'type': 'array'},
+                                'fixSteps': {'type': 'array'},
+                                'businessQuestions': {'type': 'array'},
+                                'decisionGuide': {'type': 'array'},
+                            },
+                            'required': ['column'],
+                        },
+                    },
+                },
+                'required': ['anomalyInsights'],
+            }
+            jsonschema.validate(instance=parsed, schema=schema)
+            return True
+        except Exception as e:
+            logger.debug('anomaly jsonschema validation failed: %s', e)
+            return False
+    return True
+
 def ask_ollama_for_insight_json(prompt: str) -> Dict[str, Any]:
     """Ask Ollama for JSON and give it one chance to repair malformed output."""
     first_response = ask_ollama_with_resilience(prompt)
@@ -688,7 +726,30 @@ def ask_ollama_for_anomaly_json(table_name: str, analyses: List[Dict[str, Any]])
     tasks = _compact_anomaly_tasks(analyses)
     if not tasks:
         return []
-    content = ask_ollama_for_insight_json(build_anomaly_prompt(table_name, analyses))
+
+    prompt = build_anomaly_prompt(table_name, analyses)
+    first_response = ask_ollama_with_resilience(prompt)
+    try:
+        content = parse_llm_json(first_response)
+        if not _validate_anomaly_llm_output(content):
+            _inc_metric('validation_failures')
+            raise ValueError('Anomaly LLM output failed schema validation')
+    except (ValueError, json.JSONDecodeError) as first_error:
+        _inc_metric('errors')
+        repair_prompt = (
+            'The previous response was not valid anomaly insight JSON. Return valid JSON only. '
+            'Use this exact object shape: {"anomalyInsights":[{"column":"...","rowIndex":0,"impact":"...",'
+            '"likelyCauses":["..."],"validationChecks":["..."],"fixSteps":["..."],'
+            '"businessQuestions":["..."],"decisionGuide":["..."]}]}. '
+            'Return one anomalyInsights item for each anomalyTasks item from the original prompt. '
+            f'Original prompt:\n{prompt}\n\nInvalid response to repair:\n{first_response}\n\nParser error: {first_error}'
+        )
+        repaired = ask_ollama_with_resilience(repair_prompt)
+        content = parse_llm_json(repaired)
+        if not _validate_anomaly_llm_output(content):
+            _inc_metric('validation_failures')
+            raise ValueError('Repaired anomaly LLM output failed schema validation')
+
     return _normalize_anomaly_insights(tasks, _anomaly_insights(content.get('anomalyInsights')))
 
 
