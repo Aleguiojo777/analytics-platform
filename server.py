@@ -66,7 +66,7 @@ def index():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Simple health check endpoint."""
-    return jsonify({'status': 'ok', 'version': '1.0.1'}), 200
+    return jsonify({'status': 'ok', 'version': '1.0.5'}), 200
 
 
 if __name__ == '__main__':

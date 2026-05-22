@@ -248,7 +248,11 @@ async function spawnBackend(port) {
     ...process.env,
     PORT: String(port),
     FLASK_DEBUG: '',
-    CORS_ORIGINS: `http://localhost:${port},http://127.0.0.1:${port},null`
+    CORS_ORIGINS: `http://localhost:${port},http://127.0.0.1:${port},null`,
+    ENABLE_LOCAL_LLM: process.env.ENABLE_LOCAL_LLM || 'true',
+    LOCAL_LLM_URL: process.env.LOCAL_LLM_URL || 'http://127.0.0.1:11434/api/chat',
+    LOCAL_LLM_MODEL: process.env.LOCAL_LLM_MODEL || 'llama3.2:3b',
+    LOCAL_LLM_TIMEOUT: process.env.LOCAL_LLM_TIMEOUT || '180'
   };
 
   const errors = [];

@@ -1,6 +1,6 @@
 {
   "name": "datalens-desktop",
-  "version": "1.0.2",
+  "version": "1.0.5",
   "description": "DataLens desktop shell for the local Python analytics platform.",
   "main": "electron/main.js",
   "author": "DataLens",
