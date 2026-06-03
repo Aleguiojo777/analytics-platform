@@ -122,6 +122,8 @@ class Config:
     # Defaults to True to allow local operator convenience; set to False in
     # hardened production environments where CLI usage is disallowed.
     LOCAL_LLM_ENABLE_CLI_FALLBACK = get_env_bool('LOCAL_LLM_ENABLE_CLI_FALLBACK', True)
+    # TTL (seconds) for previous successful AI-generated executive summaries used as fallback
+    LOCAL_LLM_PREVIOUS_INSIGHT_CACHE_TTL = int(os.environ.get('LOCAL_LLM_PREVIOUS_INSIGHT_CACHE_TTL', str(24 * 3600)))
 
     # Cloud LLM configuration (optional). When enabled, cloud provider will be
     # preferred over local LLM for lower operational burden.

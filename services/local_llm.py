@@ -339,6 +339,10 @@ logger = logging.getLogger(__name__)
 _llm_cache: Dict[str, tuple] = {}
 _llm_cache_lock = threading.Lock()
 
+# Previous successful AI-generated summary cache: table_name -> (ts, summary_dict)
+_previous_insight_cache: Dict[str, tuple] = {}
+_previous_insight_lock = threading.Lock()
+
 # Concurrency control
 _llm_semaphore = threading.BoundedSemaphore(value=max(1, getattr(Config, 'LOCAL_LLM_MAX_CONCURRENCY', 4)))
 
@@ -660,6 +664,28 @@ def _inc_metric(name: str) -> None:
         _llm_metrics[name] = _llm_metrics.get(name, 0) + 1
     except Exception:
         pass
+
+
+def _get_previous_insight(table_name: str) -> Optional[Dict[str, Any]]:
+    now = time.time()
+    ttl = getattr(Config, 'LOCAL_LLM_PREVIOUS_INSIGHT_CACHE_TTL', 24 * 3600)
+    with _previous_insight_lock:
+        item = _previous_insight_cache.get(table_name)
+        if not item:
+            return None
+        ts, value = item
+        if ttl and (now - ts) > ttl:
+            try:
+                del _previous_insight_cache[table_name]
+            except Exception:
+                pass
+            return None
+        return dict(value)
+
+
+def _set_previous_insight(table_name: str, summary: Dict[str, Any]) -> None:
+    with _previous_insight_lock:
+        _previous_insight_cache[table_name] = (time.time(), dict(summary))
 
 
 def _validate_llm_output(parsed: Dict[str, Any]) -> bool:
@@ -1260,6 +1286,16 @@ def enrich_summary_with_local_llm(
         coerced_flag = bool(llm_content.pop('_llm_coerced', False))
     except (OSError, TimeoutError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
         enriched['llmStatus'] = f'Local LLM unavailable: {error}'
+        # Attempt to fall back to a previously cached successful AI-generated summary for this table
+        try:
+            cached = _get_previous_insight(table_name)
+            if cached is not None:
+                enriched = dict(cached)
+                enriched['llmStatus'] = f'cached previous insight (ttl={Config.LOCAL_LLM_PREVIOUS_INSIGHT_CACHE_TTL}s)'
+                _inc_metric('previous_insight_fallbacks')
+                return enriched
+        except Exception:
+            logger.debug('Previous insight cache lookup failed', exc_info=True)
         return enriched
 
     narrative = _narrative_text(llm_content.get('narrativeText'))
@@ -1278,6 +1314,11 @@ def enrich_summary_with_local_llm(
     if narrative:
         enriched['llmNarrativeText'] = narrative
         enriched['narrativeText'] = narrative
+        # Save this successful enriched summary as the previous-insight fallback for this table
+        try:
+            _set_previous_insight(table_name, enriched)
+        except Exception:
+            logger.debug('Failed to set previous insight cache', exc_info=True)
     if observations:
         enriched['keyObservations'] = observations
     if recommendations:
