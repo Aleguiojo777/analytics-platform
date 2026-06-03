@@ -13,17 +13,36 @@ except Exception:  # pragma: no cover - optional dependency
 def _call_ollama_http(prompt: str, model: str, timeout: int = 30) -> Optional[str]:
     if not requests:
         return None
-    url = "http://localhost:11434/api/generate"
+    url = os.environ.get('LOCAL_LLM_URL', 'http://127.0.0.1:11434/api/generate')
     payload = {"model": model, "prompt": prompt}
     try:
         r = requests.post(url, json=payload, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
-        # Ollama HTTP response shapes vary; try common fields
+        try:
+            r.raise_for_status()
+        except Exception as http_err:
+            # Log details for debugging server-side 5xx/4xx errors
+            logger = logging.getLogger(__name__)
+            logger.warning('Ollama HTTP error: %s %s', r.status_code, http_err)
+            logger.info('Ollama request URL: %s', url)
+            logger.info('Ollama request payload: %s', json.dumps({k: (v if k != 'prompt' else '<prompt trimmed>') for k, v in payload.items()}))
+            # attempt to include response body if available
+            try:
+                logger.info('Ollama response body: %s', r.text[:4000])
+            except Exception:
+                logger.info('Ollama response body: <unavailable>')
+            return None
+
+        # Parse JSON if possible; Ollama response shapes vary
+        try:
+            data = r.json()
+        except Exception:
+            return r.text
+
         if isinstance(data, dict):
             return data.get("text") or data.get("output") or json.dumps(data)
         return str(data)
-    except Exception:
+    except Exception as e:
+        logging.getLogger(__name__).warning('Ollama HTTP request failed: %s', str(e))
         return None
 
 
