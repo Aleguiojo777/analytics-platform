@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from datetime import datetime
 from io import BytesIO
 
@@ -42,6 +42,14 @@ try:
 except ImportError:
     REPORTLAB_AVAILABLE = False
 
+if TYPE_CHECKING:
+    # Stubs for static type checkers when reportlab is installed in dev
+    from reportlab.lib import colors as colors  # type: ignore
+    from reportlab.lib.pagesizes import letter  # type: ignore
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle  # type: ignore
+    from reportlab.lib.units import inch  # type: ignore
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle  # type: ignore
+
 def execute_with_params(cursor, query: str, params: tuple, db_type: str):
     """Execute parameterized SQL for either mysql.connector or pyodbc."""
     if db_type == 'mysql':
@@ -82,7 +90,7 @@ def load_columns(cursor, table_ref: Dict[str, str], db_type: str) -> List[Dict[s
             columns.append({'COLUMN_NAME': row[0], 'DATA_TYPE': row[1]})
     return columns
 
-def text_value_sql(column_sql: str, data_type: str, db_type: str = None) -> str:
+def text_value_sql(column_sql: str, data_type: str, db_type: Optional[str] = None) -> str:
     """Convert text columns to string for consistent handling."""
     dtype = str(data_type or '').lower()
     if dtype in ('text', 'ntext', 'longtext', 'mediumtext', 'tinytext'):
@@ -100,7 +108,7 @@ def _clean_numeric_expr(col_sql: str) -> str:
     return f"CAST({col_sql} AS DECIMAL(18,4))"
 
 
-def analytics_value_sql(col: Dict[str, Any], cleaned_mode: bool, db_type: str = None) -> str:
+def analytics_value_sql(col: Dict[str, Any], cleaned_mode: bool, db_type: Optional[str] = None) -> str:
     """Generate SQL expression for analytics value based on database type."""
     if db_type is None:
         db_type = Config.DB_TYPE.lower()
@@ -117,7 +125,7 @@ def analytics_value_sql(col: Dict[str, Any], cleaned_mode: bool, db_type: str = 
     return col_sql
 
 
-def numeric_value_sql(col: Dict[str, Any], cleaned_mode: bool, db_type: str = None) -> str:
+def numeric_value_sql(col: Dict[str, Any], cleaned_mode: bool, db_type: Optional[str] = None) -> str:
     """Generate SQL expression for numeric value."""
     if db_type is None:
         db_type = Config.DB_TYPE.lower()
@@ -128,25 +136,29 @@ def numeric_value_sql(col: Dict[str, Any], cleaned_mode: bool, db_type: str = No
     return f"CAST({col_sql} AS DECIMAL(18,4))"
 
 
-def get_limit_clause(limit: int, db_type: str = None) -> str:
-    """Generate LIMIT clause for the database."""
+def get_limit_clause(limit: Optional[int], db_type: Optional[str] = None) -> str:
+    """Generate LIMIT clause for the database. Coerces optional limits to safe integers."""
     if db_type is None:
         db_type = Config.DB_TYPE.lower()
-    
+    # Fallback to default page size when limit is not provided
+    safe_limit = int(limit) if (limit is not None) else int(Config.DEFAULT_PAGE_SIZE or 50)
+    if safe_limit < 1:
+        safe_limit = int(Config.DEFAULT_PAGE_SIZE or 50)
+
     if db_type == 'mysql':
-        return f"LIMIT {limit}"
+        return f"LIMIT {safe_limit}"
     else:  # SQL Server
-        return f"OFFSET 0 ROWS FETCH NEXT {limit} ROWS ONLY"
+        return f"OFFSET 0 ROWS FETCH NEXT {safe_limit} ROWS ONLY"
 
 
-def get_string_length_fn(db_type: str = None) -> str:
+def get_string_length_fn(db_type: Optional[str] = None) -> str:
     """Get string length function for the database."""
     if db_type is None:
         db_type = Config.DB_TYPE.lower()
     return "LENGTH" if db_type == 'mysql' else "LEN"
 
 
-def get_date_format_expr(col_sql: str, db_type: str = None) -> str:
+def get_date_format_expr(col_sql: str, db_type: Optional[str] = None) -> str:
     """Get date formatting expression for the database."""
     if db_type is None:
         db_type = Config.DB_TYPE.lower()
@@ -158,7 +170,7 @@ def get_date_format_expr(col_sql: str, db_type: str = None) -> str:
 
 
 def load_category_profile(cursor, table_sql: str, text_cols: List[Dict[str, Any]], total_rows: int, 
-                         cleaned_mode: bool = False, db_type: str = None) -> List[Dict[str, Any]]:
+                         cleaned_mode: bool = False, db_type: Optional[str] = None) -> List[Dict[str, Any]]:
     """Load category profiles for text columns."""
     if db_type is None:
         db_type = Config.DB_TYPE.lower()
@@ -249,11 +261,13 @@ def normalize_insight_mode(value: Any) -> str:
     return mode if mode in INSIGHT_MODES else 'executive'
 
 
-def _column_names(columns: List[Dict[str, Any]], limit: int = 4) -> str:
+def _column_names(columns: Optional[List[Dict[str, Any]]], limit: int = 4) -> str:
+    columns = columns or []
     names = [str(col.get('COLUMN_NAME') or '') for col in columns if col.get('COLUMN_NAME')]
     return ', '.join(names[:limit]) or 'none detected'
 
-def _analysis_columns(analyses: List[Dict[str, Any]], limit: int = 4) -> str:
+def _analysis_columns(analyses: Optional[List[Dict[str, Any]]], limit: int = 4) -> str:
+    analyses = analyses or []
     names = [str(item.get('column') or '') for item in analyses if item.get('column')]
     return ', '.join(names[:limit]) or 'none analyzed'
 
@@ -285,7 +299,8 @@ def attach_analysis_scope(
     return summary
 
 
-def _top_metric_lines(summary: Dict[str, Any]) -> List[str]:
+def _top_metric_lines(summary: Optional[Dict[str, Any]]) -> List[str]:
+    summary = dict(summary or {})
     lines = []
     for metric in (summary.get('keyMetrics') or [])[:5]:
         lines.append(
@@ -294,7 +309,8 @@ def _top_metric_lines(summary: Dict[str, Any]) -> List[str]:
     return lines or ['No stable numeric metric was available for this report.']
 
 
-def _category_lines(summary: Dict[str, Any]) -> List[str]:
+def _category_lines(summary: Optional[Dict[str, Any]]) -> List[str]:
+    summary = dict(summary or {})
     lines = []
     for metric in (summary.get('categoryMetrics') or [])[:4]:
         lines.append(
@@ -303,7 +319,8 @@ def _category_lines(summary: Dict[str, Any]) -> List[str]:
     return lines or ['No strong category dimension was available for segmentation.']
 
 
-def _trend_lines(summary: Dict[str, Any]) -> List[str]:
+def _trend_lines(summary: Optional[Dict[str, Any]]) -> List[str]:
+    summary = dict(summary or {})
     lines = []
     for trend in (summary.get('trends') or [])[:5]:
         lines.append(
@@ -312,7 +329,9 @@ def _trend_lines(summary: Dict[str, Any]) -> List[str]:
     return lines or ['No time-based trend could be calculated from the available fields.']
 
 
-def _anomaly_lines(summary: Dict[str, Any], analyses: List[Dict[str, Any]]) -> List[str]:
+def _anomaly_lines(summary: Optional[Dict[str, Any]], analyses: Optional[List[Dict[str, Any]]]) -> List[str]:
+    summary = dict(summary or {})
+    analyses = analyses or []
     lines = []
     for anomaly in (summary.get('criticalAnomalies') or [])[:5]:
         lines.append(f"{anomaly.get('column')}: {anomaly.get('count')} detected anomaly value(s)")
@@ -408,12 +427,14 @@ def apply_insight_mode(
     summary['reportSections'] = build_report_sections(mode, summary, profile, numeric_cols, date_cols, text_cols, analyses)
     return summary
 @handle_app_error
-def get_table_analytics():
+def get_table_analytics() -> Any:
     """Retrieve comprehensive analytics for a specific table."""
     payload = request.get_json(force=True, silent=True) or {}
     db_type = request_db_type(payload)
     parsed, error_response = parse_requested_table(payload, db_type)
     if error_response:
+        return error_response
+    if parsed is None:
         return error_response
     conn_info, table_ref, use_clean = parsed
 
@@ -622,8 +643,9 @@ def pdf_filename(value: str) -> str:
     return safe.strip('_') or 'report'
 
 
-def add_pdf_section(story, styles, title: str, items: List[Any]):
+def add_pdf_section(story: List[Any], styles: Dict[str, Any], title: str, items: Optional[List[Any]]):
     story.append(Paragraph(pdf_text(title), styles['SectionTitle']))
+    items = list(items or [])
     if not items:
         story.append(Paragraph('No items available.', styles['Body']))
     for item in items:
@@ -635,7 +657,7 @@ def build_smart_insights_pdf(payload: Dict[str, Any]) -> BytesIO:
     if not REPORTLAB_AVAILABLE:
         raise RuntimeError('PDF export dependency is not installed. Install reportlab and restart the server.')
 
-    summary = payload.get('summary') or {}
+    summary = dict(payload.get('summary') or {})
     table_name = payload.get('tableName') or payload.get('table') or 'Selected table'
     mode_label = summary.get('modeLabel') or payload.get('modeLabel') or 'Insight Engine'
     generated = datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -682,8 +704,9 @@ def build_smart_insights_pdf(payload: Dict[str, Any]) -> BytesIO:
     if summary.get('narrativeText'):
         add_pdf_section(story, styles, 'Narrative', [summary.get('narrativeText')])
 
-    for section in summary.get('reportSections') or []:
-        add_pdf_section(story, styles, section.get('title') or 'Report Section', section.get('items') or [])
+    report_sections = summary.get('reportSections') or []
+    for section in list(report_sections):
+        add_pdf_section(story, styles, section.get('title') or 'Report Section', list(section.get('items') or []))
 
     if summary.get('recommendations'):
         add_pdf_section(story, styles, 'Recommendations', summary.get('recommendations'))
@@ -694,7 +717,7 @@ def build_smart_insights_pdf(payload: Dict[str, Any]) -> BytesIO:
 
 
 @handle_app_error
-def export_smart_insights_pdf():
+def export_smart_insights_pdf() -> Any:
     """Export the current Insight Engine report as a backend-generated PDF."""
     payload = request.get_json(force=True, silent=True) or {}
     summary = payload.get('summary') or {}
@@ -713,7 +736,7 @@ def export_smart_insights_pdf():
     )
 
 @handle_app_error
-def get_executive_summary():
+def get_executive_summary() -> Any:
     """Generate smart executive summary with anomalies and trends."""
     payload = request.get_json(force=True, silent=True) or {}
     insight_mode = normalize_insight_mode(payload.get('insightMode'))
@@ -724,6 +747,8 @@ def get_executive_summary():
     db_type = request_db_type(payload)
     parsed, error_response = parse_requested_table(payload, db_type)
     if error_response:
+        return error_response
+    if parsed is None:
         return error_response
     conn_info, table_ref, use_clean = parsed
 
@@ -808,7 +833,8 @@ def get_executive_summary():
                     except (TypeError, ValueError):
                         continue
 
-                if not values or len(values) < Config.MIN_VALUES_FOR_ANOMALY_DETECTION:
+                min_values = int(Config.MIN_VALUES_FOR_ANOMALY_DETECTION or 4)
+                if not values or len(values) < min_values:
                     continue
 
                 stats = {

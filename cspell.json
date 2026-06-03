@@ -1,0 +1,50 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "words": [
+    "pyinstaller",
+    "onefile",
+    "onedir",
+    "relpath",
+    "datalens",
+    "DataLens",
+    "noconfirm",
+    "specpath",
+    "distpath",
+    "workpath",
+    "Inno",
+    "ISCC",
+    "pagesizes",
+    "ntext",
+    "tinyint",
+    "smallmoney",
+    "smalldatetime",
+    "datetimeoffset",
+    "mediumtext",
+    "tinytext",
+    "TEXTCOLOR",
+    "FONTNAME",
+    "uarr",
+    "darr",
+    "venv",
+    "topbar",
+    "dedupe",
+    "Ollama",
+    "Werkzeug",
+    "pyodbc",
+    "reportlab",
+    "jsonschema",
+    "COOLDOWN",
+    "cooldown",
+    "llama3.2.1b"
+    ,
+    "upselling"
+    ,
+    "setlocal",
+    "errorlevel"
+  ],
+  "ignorePaths": [
+    "**/node_modules/**",
+    "**/release/**"
+  ]
+}

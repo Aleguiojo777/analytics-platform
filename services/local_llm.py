@@ -2,12 +2,18 @@ import json
 import os
 import shlex
 import subprocess
+import random
 from typing import Any, Dict, Optional
 
 try:
-    import requests
+    import requests  # type: ignore[reportMissingImports]
 except Exception:  # pragma: no cover - optional dependency
     requests = None
+
+try:
+    import openai  # type: ignore[reportMissingImports]
+except Exception:
+    openai = None
 
 
 def _call_ollama_http(prompt: str, model: str, timeout: int = 30) -> Optional[str]:
@@ -60,10 +66,50 @@ def _call_ollama_cli(prompt: str, model: str, timeout: int = 30) -> Optional[str
     return None
 
 
-def _call_openai(prompt: str, model: str, timeout: int = 30) -> Optional[str]:
+def _call_openai_cli(prompt: str, model: str, timeout: int = 30) -> Optional[str]:
+    """Fallback to the OpenAI CLI tool if present (best-effort).
+
+    This attempts a few common CLI invocation patterns and returns
+    any textual output. It's intentionally tolerant — failures here
+    should not raise, only return None to allow other fallbacks.
+    """
+    # Try the modern "openai chat.completions.create" style first
+    try_commands = []
     try:
-        import openai
+        messages = json.dumps([{"role": "user", "content": prompt}])
     except Exception:
+        messages = None
+
+    if messages:
+        try_commands.append(["openai", "chat", "completions", "create", "-m", model, "--messages", messages])
+    # Older CLI patterns
+    try_commands.append(["openai", "api", "completions.create", "-m", model, "-p", prompt])
+    # Some installs expose `openai` as `oai` or different verbs; try a generic `openai` run via echo->stdin
+    try_commands.append(["openai", "api", "chat.completions.create", "-m", model, "--messages", messages or prompt])
+
+    for cmd in try_commands:
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            out = (p.stdout or p.stderr or "").strip()
+            if p.returncode == 0 and out:
+                return out
+        except Exception:
+            # ignore and try next
+            continue
+
+    # Last resort: try `oai` (OpenAI community cli) if available
+    try:
+        p = subprocess.run(["oai", "chat", "-m", model, "-t", prompt], capture_output=True, text=True, timeout=timeout)
+        if p.returncode == 0 and p.stdout:
+            return p.stdout.strip()
+    except Exception:
+        pass
+
+    return None
+
+
+def _call_openai(prompt: str, model: str, timeout: int = 30) -> Optional[str]:
+    if not openai:
         return None
     key = os.environ.get("OPENAI_API_KEY")
     if not key:
@@ -80,12 +126,146 @@ def _call_openai(prompt: str, model: str, timeout: int = 30) -> Optional[str]:
         return None
 
 
+def _call_cloud_http(prompt: str, model: str, timeout: int = 30) -> Optional[str]:
+    """Generic cloud HTTP call — expects provider-compatible JSON.
+
+    The `CLOUD_LLM_URL` and `CLOUD_LLM_API_KEY` settings control behavior.
+    If `CLOUD_LLM_PROVIDER` == 'openai' we fallback to the OpenAI client.
+    """
+    if not Config.CLOUD_LLM_ENABLED:
+        return None
+    # If provider is explicit 'openai' and openai lib is present, use it
+    if Config.CLOUD_LLM_PROVIDER == 'openai' and openai:
+        return _call_openai(prompt, model, timeout)
+    if not requests:
+        return None
+    url = Config.CLOUD_LLM_URL or os.environ.get('CLOUD_LLM_URL', '')
+    if not url:
+        return None
+    headers = {'Content-Type': 'application/json'}
+    if Config.CLOUD_LLM_API_KEY:
+        headers['Authorization'] = f'Bearer {Config.CLOUD_LLM_API_KEY}'
+    payload = {'model': model or Config.CLOUD_LLM_MODEL, 'prompt': prompt}
+    try:
+        r = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        try:
+            r.raise_for_status()
+        except Exception as http_err:
+            logger.warning('Cloud LLM HTTP error: %s %s', r.status_code, http_err)
+            return None
+        try:
+            data = r.json()
+        except Exception:
+            # non-JSON response (plain text)
+            return _extract_text_from_cloud(r.text)
+        # Attempt to extract the best text from the JSON payload
+        return _extract_text_from_cloud(data)
+    except Exception as e:
+        logger.warning('Cloud LLM HTTP request failed: %s', e)
+        return None
+
+
+def _extract_text_from_cloud(data: Any) -> Optional[str]:
+    """Extract a human/text response from various cloud provider shapes.
+
+    Handles dicts with keys like 'text','output','result','message','response',
+    or choices arrays. Returns a stripped text or JSON string fallback.
+    """
+    try:
+        if data is None:
+            return None
+        # If already a string, remove common fences and return
+        if isinstance(data, str):
+            s = re.sub(r'^```(?:json)?\n?|```$', '', data.strip(), flags=re.IGNORECASE | re.MULTILINE)
+            return s.strip() or None
+
+        if isinstance(data, list):
+            # Join textual items
+            parts = []
+            for item in data:
+                if isinstance(item, (str, int, float)):
+                    parts.append(str(item))
+                elif isinstance(item, dict):
+                    t = _extract_text_from_cloud(item)
+                    if t:
+                        parts.append(t)
+            return '\n'.join(parts)[:65536] if parts else None
+
+        if isinstance(data, dict):
+            # Common keys
+            for key in ('text', 'output', 'result', 'answer', 'response'):
+                val = data.get(key)
+                if isinstance(val, (str, int, float)) and str(val).strip():
+                    return str(val).strip()
+            # nested message/content
+            if 'message' in data:
+                msg = data.get('message')
+                if isinstance(msg, dict):
+                    for k in ('content', 'text'):
+                        if msg.get(k):
+                            return str(msg.get(k)).strip()
+                elif isinstance(msg, str):
+                    return msg.strip()
+            # choices/outputs arrays
+            for arr_key in ('choices', 'outputs', 'results'):
+                arr = data.get(arr_key)
+                if isinstance(arr, list) and arr:
+                    first = arr[0]
+                    if isinstance(first, dict):
+                        for k in ('text', 'content', 'message'):
+                            if first.get(k):
+                                return str(first.get(k)).strip()
+                    elif isinstance(first, str):
+                        return first.strip()
+            # last resort: return compact JSON string
+            try:
+                return json.dumps(data)
+            except Exception:
+                return None
+    except Exception:
+        return None
+
+
+def check_cloud_health(timeout: int = 5) -> Dict[str, Any]:
+    """Lightweight health check for configured cloud LLM.
+
+    Returns a dict with keys: provider, ok (bool), latency (float seconds), message.
+    Does not send expensive prompts; uses a tiny ping payload where supported.
+    """
+    start = time.time()
+    if not Config.CLOUD_LLM_ENABLED:
+        return {'provider': None, 'ok': False, 'latency': 0.0, 'message': 'cloud disabled'}
+    # If provider is OpenAI and client available, do a lightweight call
+    if Config.CLOUD_LLM_PROVIDER == 'openai' and openai:
+        try:
+            # Try a minimal call with max_tokens=1 to test connectivity
+            resp = _call_openai('ping', Config.CLOUD_LLM_MODEL, timeout=timeout)
+            latency = time.time() - start
+            return {'provider': 'openai', 'ok': bool(resp), 'latency': latency, 'message': 'ok' if resp else 'no response'}
+        except Exception as e:
+            latency = time.time() - start
+            return {'provider': 'openai', 'ok': False, 'latency': latency, 'message': str(e)}
+    # Generic HTTP probe: call the configured URL without a large payload
+    if not Config.CLOUD_LLM_URL:
+        latency = time.time() - start
+        return {'provider': Config.CLOUD_LLM_PROVIDER, 'ok': False, 'latency': latency, 'message': 'CLOUD_LLM_URL not configured'}
+    try:
+        # Use a simple POST with a very small prompt
+        small = 'health check'
+        resp_text = _call_cloud_http(small, Config.CLOUD_LLM_MODEL, timeout=timeout)
+        latency = time.time() - start
+        return {'provider': Config.CLOUD_LLM_PROVIDER, 'ok': bool(resp_text), 'latency': latency, 'message': 'ok' if resp_text else 'no response'}
+    except Exception as e:
+        latency = time.time() - start
+        return {'provider': Config.CLOUD_LLM_PROVIDER, 'ok': False, 'latency': latency, 'message': str(e)}
+
+
 def generate(prompt: str, model: str = "phi3:mini", timeout: int = 30) -> Dict[str, Any]:
     """Generate text from local model or fallback to available providers.
 
     Strategy: try Ollama HTTP -> Ollama CLI -> OpenAI (if API key present).
     """
-    result = {
+    result: Dict[str, Any] = {
         "provider": None,
         "text": None,
         "error": None,
@@ -105,6 +285,15 @@ def generate(prompt: str, model: str = "phi3:mini", timeout: int = 30) -> Dict[s
     if text:
         result.update({"provider": "openai", "text": text})
         return result
+
+    # Try the OpenAI CLI as a last-resort fallback if the python client is unavailable
+    # This is guarded by `Config.LOCAL_LLM_ENABLE_CLI_FALLBACK` so production
+    # environments can opt out of executing external CLI tools.
+    if getattr(Config, 'LOCAL_LLM_ENABLE_CLI_FALLBACK', True):
+        text = _call_openai_cli(prompt, model, timeout)
+        if text:
+            result.update({"provider": "openai-cli", "text": text})
+            return result
 
     result["error"] = (
         "No provider produced output. Ensure Ollama is running or set OPENAI_API_KEY."
@@ -141,6 +330,7 @@ try:
     import jsonschema  # type: ignore[reportMissingModuleSource]
     _HAVE_JSONSCHEMA = True
 except Exception:
+    jsonschema = None
     _HAVE_JSONSCHEMA = False
 
 logger = logging.getLogger(__name__)
@@ -148,6 +338,9 @@ logger = logging.getLogger(__name__)
 # Simple in-process cache: prompt_hash -> (ts, response_str)
 _llm_cache: Dict[str, tuple] = {}
 _llm_cache_lock = threading.Lock()
+
+# Concurrency control
+_llm_semaphore = threading.BoundedSemaphore(value=max(1, getattr(Config, 'LOCAL_LLM_MAX_CONCURRENCY', 4)))
 
 # Circuit breaker state
 _llm_last_failure = 0.0
@@ -159,6 +352,7 @@ _llm_metrics = {
     'errors': 0,
     'cache_hits': 0,
     'validation_failures': 0,
+    'coercions': 0,
 }
 
 
@@ -327,10 +521,12 @@ def build_insight_prompt(
         if len(payload_json) > Config.LOCAL_LLM_MAX_PROMPT_CHARS:
             # aggressively trim long lists/fields and re-serialize
             payload = sanitized_payload
-            # Trim large arrays in place
-            for key in ('columnAnalyses', 'anomalyTasks', 'computedObservations', 'computedRecommendations', 'trends', 'anomalies'):
-                if isinstance(payload.get(key), list):
-                    payload[key] = payload[key][:max(1, int(Config.LOCAL_LLM_MAX_PROMPT_CHARS / 2000))]
+            # Trim large arrays in place only when payload is a dict
+            if isinstance(payload, dict):
+                for key in ('columnAnalyses', 'anomalyTasks', 'computedObservations', 'computedRecommendations', 'trends', 'anomalies'):
+                    v = payload.get(key)
+                    if isinstance(v, list):
+                        payload[key] = v[:max(1, int(Config.LOCAL_LLM_MAX_PROMPT_CHARS / 2000))]
             payload_json = json.dumps(payload, ensure_ascii=True)
     except Exception:
         payload_json = json.dumps(payload, ensure_ascii=True)
@@ -473,7 +669,7 @@ def _validate_llm_output(parsed: Dict[str, Any]) -> bool:
         return False
     if not required_keys.issubset(set(parsed.keys())):
         return False
-    if _HAVE_JSONSCHEMA:
+    if _HAVE_JSONSCHEMA and jsonschema is not None:
         try:
             schema = {
                 'type': 'object',
@@ -496,7 +692,7 @@ def _validate_llm_output(parsed: Dict[str, Any]) -> bool:
     return True
 
 
-def ask_ollama_with_resilience(prompt: str, cache_ttl: int = None) -> str:
+def ask_ollama_with_resilience(prompt: str, cache_ttl: Optional[int] = None) -> str:
     """Call the local LLM with caching, retries, backoff, and simple circuit-breaker."""
     _inc_metric('calls')
     key = _prompt_hash(prompt)
@@ -516,32 +712,96 @@ def ask_ollama_with_resilience(prompt: str, cache_ttl: int = None) -> str:
         raise OSError('Local LLM is in cooldown due to recent failures')
 
     last_err = None
-    for attempt in range(max(1, Config.LOCAL_LLM_MAX_RETRIES + 1)):
-        try:
-            start = time.time()
-            result = ask_ollama(prompt)
-            latency = time.time() - start
-            logger.info('LLM call success (latency=%.2fs)', latency)
-            _llm_failure_count = 0
-            _llm_last_failure = 0.0
-            # cache and return
-            try:
-                _set_cached_response(key, result)
-            except Exception:
-                logger.debug('Failed to set LLM cache')
-            return result
-        except Exception as e:
-            last_err = e
-            _inc_metric('errors')
-            _llm_failure_count += 1
-            _llm_last_failure = time.time()
-            backoff = Config.LOCAL_LLM_RETRY_BACKOFF_SEC * (2 ** attempt)
-            logger.warning('LLM call failed (attempt %d): %s — backing off %.1fs', attempt + 1, e, backoff)
-            time.sleep(backoff)
+    # Acquire concurrency slot to avoid OOM / too many parallel model calls
+    acquired = _llm_semaphore.acquire(timeout=10)
+    if not acquired:
+        _inc_metric('errors')
+        raise OSError('Too many concurrent LLM requests; try again later')
 
-    # all attempts failed
-    logger.error('Local LLM unavailable after retries: %s', last_err)
-    raise last_err
+    try:
+        # If cloud is enabled, try cloud first via the generic HTTP call
+        if Config.CLOUD_LLM_ENABLED:
+            try:
+                cloud_attempts = max(1, Config.CLOUD_LLM_MAX_RETRIES + 1)
+                for attempt in range(cloud_attempts):
+                    try:
+                        start = time.time()
+                        cloud_text = _call_cloud_http(prompt, Config.CLOUD_LLM_MODEL, timeout=Config.CLOUD_LLM_TIMEOUT)
+                        latency = time.time() - start
+                        if cloud_text:
+                            logger.info('Cloud LLM call success (latency=%.2fs)', latency)
+                            try:
+                                _set_cached_response(key, cloud_text)
+                            except Exception:
+                                logger.debug('Failed to set LLM cache for cloud result')
+                            return cloud_text
+                    except Exception as e:
+                        last_err = e
+                        _inc_metric('errors')
+                        logger.warning('Cloud LLM call failed (attempt %d): %s', attempt + 1, e)
+                        # small backoff between cloud attempts
+                        time.sleep(min(1.0 * (2 ** attempt), 10.0))
+            except Exception:
+                logger.exception('Cloud LLM attempts failed; falling back to local')
+
+        # Local attempts
+        local_attempts = max(1, Config.LOCAL_LLM_MAX_RETRIES + 1)
+        for attempt in range(local_attempts):
+            try:
+                start = time.time()
+                result = ask_ollama(prompt)
+                latency = time.time() - start
+                logger.info('LLM call success (latency=%.2fs)', latency)
+                _llm_failure_count = 0
+                _llm_last_failure = 0.0
+                # cache and return
+                try:
+                    _set_cached_response(key, result)
+                except Exception:
+                    logger.debug('Failed to set LLM cache')
+                return result
+            except Exception as e:
+                last_err = e
+                _inc_metric('errors')
+                _llm_failure_count += 1
+                _llm_last_failure = time.time()
+                # Exponential backoff with jitter: base * 2^attempt, plus random jitter up to 50%
+                base = max(0.1, float(Config.LOCAL_LLM_RETRY_BACKOFF_SEC))
+                expo = base * (2 ** attempt)
+                jitter = random.uniform(0, expo * 0.5)
+                backoff = expo + jitter
+                logger.warning('LLM call failed (attempt %d): %s — backing off %.1fs (base=%.1fs, jitter=%.2fs)', attempt + 1, e, backoff, expo, jitter)
+                time.sleep(backoff)
+
+        # all local attempts failed
+        logger.error('Local LLM unavailable after retries: %s', last_err)
+        # As a last resort, allow a CLI or alternate-provider fallback if enabled.
+        try:
+            if getattr(Config, 'LOCAL_LLM_ENABLE_CLI_FALLBACK', True):
+                logger.info('Attempting CLI/alternate fallback after local retries')
+                try:
+                    gen = generate(prompt, Config.LOCAL_LLM_MODEL, timeout=Config.LOCAL_LLM_TIMEOUT)
+                    text = gen.get('text') if isinstance(gen, dict) else None
+                    if text:
+                        try:
+                            _set_cached_response(key, text)
+                        except Exception:
+                            logger.debug('Failed to set LLM cache for fallback result')
+                        return text
+                except Exception as e:
+                    logger.debug('CLI/alternate fallback attempt failed: %s', e)
+        except Exception:
+            # swallowing errors here to preserve original exception behavior below
+            pass
+
+        if last_err is None:
+            raise OSError('Local LLM failed without exception details')
+        raise last_err
+    finally:
+        try:
+            _llm_semaphore.release()
+        except Exception:
+            pass
 
 
 def parse_llm_json(text: str) -> Dict[str, Any]:
@@ -734,7 +994,7 @@ def _validate_anomaly_llm_output(parsed: Dict[str, Any]) -> bool:
     insights = parsed.get('anomalyInsights')
     if not isinstance(insights, list):
         return False
-    if _HAVE_JSONSCHEMA:
+    if _HAVE_JSONSCHEMA and jsonschema is not None:
         try:
             schema = {
                 'type': 'object',
@@ -775,8 +1035,14 @@ def ask_ollama_for_insight_json(prompt: str) -> Dict[str, Any]:
         if not _validate_llm_output(parsed):
             # Try to coerce common alternate shapes into the expected schema
             coerced = _coerce_insight_shape(parsed)
-            if coerced and _validate_llm_output(coerced):
-                logger.info('Coerced LLM first response into expected schema')
+            if coerced:
+                # If coercion produced something, prefer returning it (best-effort).
+                coerced['_llm_coerced'] = True
+                _inc_metric('coercions')
+                if _validate_llm_output(coerced):
+                    logger.info('Coerced LLM first response into expected schema')
+                else:
+                    logger.warning('Coerced LLM first response did not fully validate but will be used (best-effort)')
                 return coerced
             _inc_metric('validation_failures')
             raise ValueError('LLM output failed schema validation')
@@ -796,8 +1062,13 @@ def ask_ollama_for_insight_json(prompt: str) -> Dict[str, Any]:
         parsed2 = parse_llm_json(repaired)
         if not _validate_llm_output(parsed2):
             coerced2 = _coerce_insight_shape(parsed2)
-            if coerced2 and _validate_llm_output(coerced2):
-                logger.info('Coerced repaired LLM response into expected schema')
+            if coerced2:
+                coerced2['_llm_coerced'] = True
+                _inc_metric('coercions')
+                if _validate_llm_output(coerced2):
+                    logger.info('Coerced repaired LLM response into expected schema')
+                else:
+                    logger.warning('Coerced repaired LLM response did not fully validate but will be used (best-effort)')
                 return coerced2
             _inc_metric('validation_failures')
             logger.info('Repaired LLM output failed validation')
@@ -827,11 +1098,13 @@ def _coerce_insight_shape(parsed: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if summary.get('whatMattersMost'):
             out['narrativeText'] = str(summary.get('whatMattersMost'))
         # risksToCheck -> keyObservations
-        if isinstance(summary.get('risksToCheck'), list):
-            out['keyObservations'] = [str(x) for x in summary.get('risksToCheck')[:6]]
+        r = summary.get('risksToCheck')
+        if isinstance(r, list):
+            out['keyObservations'] = [str(x) for x in r[:6]]
         # nextActions -> recommendations
-        if isinstance(summary.get('nextActions'), list):
-            out['recommendations'] = [str(x) for x in summary.get('nextActions')[:8]]
+        na = summary.get('nextActions')
+        if isinstance(na, list):
+            out['recommendations'] = [str(x) for x in na[:8]]
         # also try to construct reportSections
         sections = []
         if out['keyObservations']:
@@ -904,6 +1177,11 @@ def _normalize_anomaly_insights(tasks: List[Dict[str, Any]], insights: List[Dict
 
     normalized = []
     unused = list(insights)
+    def _safe_int(v: Any) -> Optional[int]:
+        try:
+            return int(v)
+        except Exception:
+            return None
     for task in tasks:
         task_column = str(task.get('column') or '').strip().lower()
         task_row = task.get('rowIndex')
@@ -911,7 +1189,9 @@ def _normalize_anomaly_insights(tasks: List[Dict[str, Any]], insights: List[Dict
         for item in unused:
             item_column = str(item.get('column') or '').strip().lower()
             same_column = item_column == task_column
-            same_row = item.get('rowIndex') is None or task_row is None or int(item.get('rowIndex')) == int(task_row)
+            item_row_i = _safe_int(item.get('rowIndex'))
+            task_row_i = _safe_int(task_row)
+            same_row = item.get('rowIndex') is None or task_row is None or (item_row_i is not None and task_row_i is not None and item_row_i == task_row_i)
             if same_column and same_row:
                 match = item
                 break
@@ -976,6 +1256,8 @@ def enrich_summary_with_local_llm(
     try:
         prompt = build_insight_prompt(table_name, enriched, profile, numeric_cols, date_cols, text_cols, analyses)
         llm_content = ask_ollama_for_insight_json(prompt)
+        # Detect if the returned content was coerced from an alternate shape.
+        coerced_flag = bool(llm_content.pop('_llm_coerced', False))
     except (OSError, TimeoutError, urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
         enriched['llmStatus'] = f'Local LLM unavailable: {error}'
         return enriched
@@ -1007,6 +1289,9 @@ def enrich_summary_with_local_llm(
     if anomaly_insights:
         enriched['llmAnomalyInsights'] = anomaly_insights
 
-    metrics = {k: _llm_metrics.get(k, 0) for k in ('calls', 'errors', 'cache_hits', 'validation_failures')}
-    enriched['llmStatus'] = f'Generated locally with {Config.LOCAL_LLM_MODEL} (metrics: {metrics})'
+    metrics = {k: _llm_metrics.get(k, 0) for k in ('calls', 'errors', 'cache_hits', 'validation_failures', 'coercions')}
+    coerced_note = ' (coerced)' if coerced_flag else ''
+    enriched['llmStatus'] = f'Generated locally with {Config.LOCAL_LLM_MODEL}{coerced_note} (metrics: {metrics})'
+    if coerced_flag:
+        logger.info('LLM output used coercion for table %s (metrics: %s)', table_name, metrics)
     return enriched

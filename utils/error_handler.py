@@ -2,7 +2,7 @@
 
 import logging
 import traceback
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, Optional
 from functools import wraps
 from flask import jsonify, request
 
@@ -37,7 +37,7 @@ class AuthenticationError(AppError):
 
 class DatabaseError(AppError):
     """Database connection/operation error exception."""
-    def __init__(self, message: str, original_error: Exception = None):
+    def __init__(self, message: str, original_error: Optional[Exception] = None):
         super().__init__(message, 503, 'DATABASE_ERROR')
         self.original_error = original_error
 
@@ -98,7 +98,7 @@ def get_db_error_message(error: Exception) -> str:
     return 'Database operation failed. Please check the request and try again.'
 
 
-def error_response(message: str, status_code: int = 500, error_code: str = 'INTERNAL_ERROR') -> Tuple[Dict[str, Any], int]:
+def error_response(message: str, status_code: int = 500, error_code: str = 'INTERNAL_ERROR') -> Tuple[Any, int]:
     """Create standardized error response."""
     return jsonify({
         'error': message,
@@ -127,7 +127,7 @@ def handle_app_error(f):
     return wrapper
 
 
-def handle_database_error(original_error: Exception, friendly_msg: str = None) -> Tuple[Dict[str, Any], int]:
+def handle_database_error(original_error: Exception, friendly_msg: Optional[str] = None) -> Tuple[Any, int]:
     """Handle database-related errors."""
     if friendly_msg is None:
         friendly_msg = get_db_error_message(original_error)

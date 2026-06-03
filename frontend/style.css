@@ -1,4 +1,4 @@
-/* DataLens - Dark Industrial Analytics Theme */
+﻿/* DataLens - Dark Industrial Analytics Theme */
 
 :root {
   --bg-base:       #0a0b0e;
@@ -13,6 +13,12 @@
   --accent2:       #4d9fff;
   --accent3:       #ff6b6b;
   --accent4:       #ffd166;
+  --accent2-bg:    rgba(77,159,255,0.08);
+  --accent2-border:rgba(77,159,255,0.38);
+  --accent3-bg:    rgba(255,107,107,0.08);
+  --accent3-border:rgba(255,107,107,0.38);
+  --accent4-bg:    rgba(255,209,102,0.08);
+  --accent4-border:rgba(255,209,102,0.38);
   --text-primary:  #e8eaf0;
   --text-secondary:#8892a4;
   --text-muted:    #50596b;
@@ -36,6 +42,12 @@ body[data-theme="light"] {
   --accent2:       #0891b2;
   --accent3:       #dc2626;
   --accent4:       #ca8a04;
+  --accent2-bg:    rgba(8,145,178,0.08);
+  --accent2-border:rgba(8,145,178,0.38);
+  --accent3-bg:    rgba(220,38,38,0.08);
+  --accent3-border:rgba(220,38,38,0.38);
+  --accent4-bg:    rgba(202,138,4,0.08);
+  --accent4-border:rgba(202,138,4,0.38);
   --text-primary:  #111827;
   --text-secondary:#4b5563;
   --text-muted:    #6b7280;
@@ -54,6 +66,12 @@ body[data-theme="ocean"] {
   --accent2:       #22d3ee;
   --accent3:       #fb7185;
   --accent4:       #facc15;
+  --accent2-bg:    rgba(34,211,238,0.08);
+  --accent2-border:rgba(34,211,238,0.38);
+  --accent3-bg:    rgba(251,113,133,0.08);
+  --accent3-border:rgba(251,113,133,0.38);
+  --accent4-bg:    rgba(250,204,21,0.08);
+  --accent4-border:rgba(250,204,21,0.38);
   --text-primary:  #e6f6ff;
   --text-secondary:#9fc3d8;
   --text-muted:    #65879c;
@@ -72,6 +90,12 @@ body[data-theme="forest"] {
   --accent2:       #0f766e;
   --accent3:       #b91c1c;
   --accent4:       #a16207;
+  --accent2-bg:    rgba(15,118,110,0.08);
+  --accent2-border:rgba(15,118,110,0.38);
+  --accent3-bg:    rgba(185,28,28,0.08);
+  --accent3-border:rgba(185,28,28,0.38);
+  --accent4-bg:    rgba(161,98,7,0.08);
+  --accent4-border:rgba(161,98,7,0.38);
   --text-primary:  #1c2514;
   --text-secondary:#4b6040;
   --text-muted:    #718063;
@@ -759,9 +783,37 @@ body {
   background: var(--bg-base);
 }
 .table-health-pill.excellent { color: var(--accent); border-color: var(--accent-glow); background: var(--accent-dim); }
-.table-health-pill.good { color: var(--accent2); border-color: color-mix(in srgb, var(--accent2) 38%, transparent); background: color-mix(in srgb, var(--accent2) 8%, transparent); }
-.table-health-pill.fair { color: var(--accent4); border-color: color-mix(in srgb, var(--accent4) 38%, transparent); background: color-mix(in srgb, var(--accent4) 8%, transparent); }
-.table-health-pill.blocked { color: var(--accent3); border-color: color-mix(in srgb, var(--accent3) 38%, transparent); background: color-mix(in srgb, var(--accent3) 8%, transparent); }
+.table-health-pill.good {
+  color: var(--accent2);
+  /* fallback for older browsers */
+  border-color: var(--accent2-border);
+  background: var(--accent2-bg);
+}
+.table-health-pill.fair {
+  color: var(--accent4);
+  border-color: var(--accent4-border);
+  background: var(--accent4-bg);
+}
+.table-health-pill.blocked {
+  color: var(--accent3);
+  border-color: var(--accent3-border);
+  background: var(--accent3-bg);
+}
+
+@supports (color: color-mix(in srgb, var(--accent2) 38%, transparent)) {
+  .table-health-pill.good {
+    border-color: color-mix(in srgb, var(--accent2) 38%, transparent);
+    background: color-mix(in srgb, var(--accent2) 8%, transparent);
+  }
+  .table-health-pill.fair {
+    border-color: color-mix(in srgb, var(--accent4) 38%, transparent);
+    background: color-mix(in srgb, var(--accent4) 8%, transparent);
+  }
+  .table-health-pill.blocked {
+    border-color: color-mix(in srgb, var(--accent3) 38%, transparent);
+    background: color-mix(in srgb, var(--accent3) 8%, transparent);
+  }
+}
 /* STATS ROW */
 .stats-row {
   display: grid;
