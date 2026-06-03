@@ -1,7 +1,7 @@
 """Database adapter abstraction for SQL Server and MySQL support."""
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from abc import ABC, abstractmethod
 
 import pyodbc
@@ -14,6 +14,7 @@ try:
     import mysql.connector  # type: ignore
     MYSQL_AVAILABLE = True
 except ImportError:
+    mysql = None
     MYSQL_AVAILABLE = False
 
 
@@ -21,7 +22,7 @@ class DatabaseAdapter(ABC):
     """Abstract base class for database adapters."""
 
     @abstractmethod
-    def open_connection(self, conn_info: Dict[str, Any]):
+    def open_connection(self, conn_info: Dict[str, Any]) -> Any:
         """Open a connection to the database."""
         pass
 
@@ -152,7 +153,12 @@ class MySQLAdapter(DatabaseAdapter):
         username = conn_info['username']
         password = conn_info['password']
 
-        return mysql.connector.connect(
+        try:
+            import mysql.connector as mysql_conn  # type: ignore
+        except ImportError:
+            raise ImportError("mysql-connector-python is required for MySQL support. Install it with: pip install mysql-connector-python")
+
+        return mysql_conn.connect(
             host=server,
             port=port,
             user=username,
@@ -198,7 +204,7 @@ class MySQLAdapter(DatabaseAdapter):
         return 'Connection failed. Check the server details and try again.'
 
 
-def get_database_adapter(db_type: str = None) -> DatabaseAdapter:
+def get_database_adapter(db_type: Optional[str] = None) -> DatabaseAdapter:
     """Factory function to get the appropriate database adapter.
     
     Args:

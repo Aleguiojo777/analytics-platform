@@ -4,9 +4,11 @@ from importlib import import_module
 
 from flask import Flask, send_from_directory, jsonify
 from flask_cors import CORS
+from typing import cast
 
 from routes.analytics_routes import bp as analytics_bp
 from routes.db_routes import bp as db_bp
+from routes.llm_routes import bp as llm_bp
 from utils.config import Config
 from utils.error_handler import AppError, logger as error_logger
 
@@ -26,6 +28,30 @@ CORS(app, resources={r'/api/*': {'origins': Config.CORS_ORIGINS}})
 # Register blueprints
 app.register_blueprint(db_bp)
 app.register_blueprint(analytics_bp)
+app.register_blueprint(llm_bp)
+
+# Optional pre-warm of LLM providers to reduce cold-start failures
+def _prewarm_llm():
+    try:
+        import threading
+        from services.local_llm import check_cloud_health, ask_ollama_with_resilience
+        def _worker():
+            try:
+                # health probe
+                check_cloud_health(timeout=3)
+            except Exception:
+                pass
+            try:
+                # short warming prompt (non-blocking)
+                ask_ollama_with_resilience('Warm-up ping', cache_ttl=60)
+            except Exception:
+                pass
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+    except Exception:
+        logger.debug('LLM prewarm not available or failed')
+
+_prewarm_llm()
 
 # Global error handlers
 @app.errorhandler(400)
@@ -54,14 +80,17 @@ def handle_app_error(error: AppError):
 
 @app.route('/<path:path>', methods=['GET'])
 def static_proxy(path: str):
-    file_path = os.path.join(app.static_folder, path)
+    # `app.static_folder` can be Optional[str] in some Flask typings — ensure non-None
+    static_dir = cast(str, app.static_folder)
+    file_path = os.path.join(static_dir, path)
     if os.path.exists(file_path):
-        return send_from_directory(app.static_folder, path)
-    return send_from_directory(app.static_folder, 'index.html')
+        return send_from_directory(static_dir, path)
+    return send_from_directory(static_dir, 'index.html')
 
 @app.route('/', methods=['GET'])
 def index():
-    return send_from_directory(app.static_folder, 'index.html')
+    static_dir = cast(str, app.static_folder)
+    return send_from_directory(static_dir, 'index.html')
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
