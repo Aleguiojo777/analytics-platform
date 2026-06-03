@@ -124,6 +124,12 @@ class Config:
     LOCAL_LLM_ENABLE_CLI_FALLBACK = get_env_bool('LOCAL_LLM_ENABLE_CLI_FALLBACK', True)
     # TTL (seconds) for previous successful AI-generated executive summaries used as fallback
     LOCAL_LLM_PREVIOUS_INSIGHT_CACHE_TTL = int(os.environ.get('LOCAL_LLM_PREVIOUS_INSIGHT_CACHE_TTL', str(24 * 3600)))
+    # If true, perform LLM enrichment in a background thread and return computed summary immediately
+    LOCAL_LLM_BACKGROUND_ENRICH = get_env_bool('LOCAL_LLM_BACKGROUND_ENRICH', True)
+    # Use a smaller, lower-latency model for interactive/enrichment attempts first
+    LOCAL_LLM_INTERACTIVE_MODEL = (get_env('LOCAL_LLM_INTERACTIVE_MODEL', '') or '')
+    # When true, send a compact prompt (essential fields only) to reduce model runtime
+    LOCAL_LLM_USE_COMPACT_PROMPT = get_env_bool('LOCAL_LLM_USE_COMPACT_PROMPT', True)
 
     # Cloud LLM configuration (optional). When enabled, cloud provider will be
     # preferred over local LLM for lower operational burden.

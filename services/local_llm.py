@@ -502,6 +502,20 @@ def build_insight_prompt(
         'anomalyTasks': anomaly_tasks,
         'columnAnalyses': compact_analyses,
     }
+    # If configured, use a compact prompt containing only essential fields to reduce model latency
+    try:
+        if getattr(Config, 'LOCAL_LLM_USE_COMPACT_PROMPT', False):
+            compact_payload = {
+                'table': table_name,
+                'mode': mode,
+                'health': _profile_snapshot(profile),
+                'keyMetrics': payload.get('keyMetrics')[:3],
+                'computedObservations': payload.get('computedObservations')[:4],
+                'anomalyCount': len(payload.get('anomalyTasks') or []),
+            }
+            payload = compact_payload
+    except Exception:
+        pass
     # Harden payload: sanitize strings and limit overall size
     def _sanitize_obj(obj, field_limit=Config.LOCAL_LLM_MAX_FIELD_CHARS):
         if isinstance(obj, str):
@@ -577,9 +591,10 @@ def build_insight_prompt(
     )
 
 
-def ask_ollama(prompt: str) -> str:
+def ask_ollama(prompt: str, model: Optional[str] = None) -> str:
+    model_to_use = model or Config.LOCAL_LLM_MODEL
     body = json.dumps({
-        'model': Config.LOCAL_LLM_MODEL,
+        'model': model_to_use,
         'stream': False,
         'format': 'json',
         'messages': [
@@ -775,7 +790,15 @@ def ask_ollama_with_resilience(prompt: str, cache_ttl: Optional[int] = None) -> 
         for attempt in range(local_attempts):
             try:
                 start = time.time()
-                result = ask_ollama(prompt)
+                # Use a lower-latency interactive model for the first attempt when configured
+                model_to_use = None
+                try:
+                    if attempt == 0 and getattr(Config, 'LOCAL_LLM_INTERACTIVE_MODEL', ''):
+                        model_to_use = Config.LOCAL_LLM_INTERACTIVE_MODEL
+                except Exception:
+                    model_to_use = None
+
+                result = ask_ollama(prompt, model=model_to_use)
                 latency = time.time() - start
                 logger.info('LLM call success (latency=%.2fs)', latency)
                 _llm_failure_count = 0
@@ -1234,6 +1257,68 @@ def _normalize_anomaly_insights(tasks: List[Dict[str, Any]], insights: List[Dict
     return normalized
 
 
+def _deterministic_summary(summary: Dict[str, Any], analyses: List[Dict[str, Any]], profile: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a minimal deterministic summary when LLM is unavailable.
+
+    Produces `narrativeText` (two short paragraphs), `keyObservations`,
+    and simple `recommendations` derived from existing computed analyses.
+    """
+    out: Dict[str, Any] = {
+        'narrativeText': '',
+        'keyObservations': [],
+        'recommendations': [],
+        'reportSections': [],
+        'columnInsights': [],
+        'anomalyInsights': [],
+    }
+
+    try:
+        # Key observations from summary if present
+        if summary and isinstance(summary.get('keyObservations'), list) and summary.get('keyObservations'):
+            obs = summary.get('keyObservations')[:6]
+            out['keyObservations'] = [_text(x, 300) for x in obs]
+        else:
+            # Derive from analyses: top columns and anomaly counts
+            tops = []
+            for a in (analyses or [])[:6]:
+                col = str(a.get('column') or '')
+                cnt = len(a.get('anomalies') or [])
+                if col:
+                    tops.append(f"{col}: {cnt} anomaly(s)" if cnt else f"{col}: no recent anomalies")
+            out['keyObservations'] = tops[:6]
+
+        # Recommendations: simple deterministic actions
+        recs = []
+        if profile and profile.get('usable') is False:
+            recs.append('Review table schema or choose a different table for insights.')
+        else:
+            recs.append('Validate top anomalies and confirm data boundaries.')
+            recs.append('Monitor the suggested key metrics over the next reporting period.')
+        out['recommendations'] = recs[:6]
+
+        # Compose narrative: two short paragraphs
+        p1 = ' '.join(out['keyObservations'][:3]) or 'No strong metric signals found.'
+        p2 = ' '.join(out['recommendations'][:2]) or 'No recommendations available.'
+        out['narrativeText'] = f"{p1}\n\n{p2}"
+
+        # Minimal report section
+        if out['keyObservations']:
+            out['reportSections'].append({'title': 'Observations', 'items': out['keyObservations'][:4]})
+        if out['recommendations']:
+            out['reportSections'].append({'title': 'Recommendations', 'items': out['recommendations'][:4]})
+
+    except Exception:
+        # If deterministic generation fails, return the original summary shape with a note
+        try:
+            fallback = dict(summary or {})
+            fallback['narrativeText'] = fallback.get('narrativeText') or 'Computed numeric analysis is available; no narrative could be generated.'
+            return fallback
+        except Exception:
+            return out
+
+    return out
+
+
 def ask_ollama_for_anomaly_json(table_name: str, analyses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     tasks = _compact_anomaly_tasks(analyses)
     if not tasks:
@@ -1296,6 +1381,15 @@ def enrich_summary_with_local_llm(
                 return enriched
         except Exception:
             logger.debug('Previous insight cache lookup failed', exc_info=True)
+
+        # As a last resort, generate a deterministic fallback summary from computed analyses
+        try:
+            det = _deterministic_summary(summary=summary, analyses=analyses or [], profile=profile)
+            det['llmStatus'] = 'deterministic fallback (no LLM)'
+            _inc_metric('deterministic_fallbacks')
+            return det
+        except Exception:
+            logger.exception('Deterministic fallback failed')
         return enriched
 
     narrative = _narrative_text(llm_content.get('narrativeText'))

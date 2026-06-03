@@ -3,6 +3,8 @@ from datetime import datetime
 from io import BytesIO
 
 from flask import jsonify, request, send_file
+import threading
+import logging
 
 from services.analytics_insights import (
     analyze_anomalies_detailed,
@@ -788,8 +790,22 @@ def get_executive_summary() -> Any:
                 summary = apply_insight_mode(summary, insight_mode, profile, numeric_cols, date_cols, text_cols, [])
                 summary['insightEngine'] = 'smart'
                 if use_ai_insights and use_local_llm_flag is not False:
-                    summary = enrich_summary_with_local_llm(table_ref['label'], summary, profile, numeric_cols, date_cols, text_cols, [])
-                    summary['insightEngine'] = 'ai' if summary.get('llmStatus', '').startswith('Generated locally') else 'smart'
+                    if getattr(Config, 'LOCAL_LLM_BACKGROUND_ENRICH', False):
+                        def _bg_enrich(label, s, p, n, d, t, a):
+                            try:
+                                enrich_summary_with_local_llm(label, s, p, n, d, t, a)
+                            except Exception:
+                                logging.getLogger(__name__).exception('Background LLM enrichment failed')
+
+                        threading.Thread(
+                            target=_bg_enrich,
+                            args=(table_ref['label'], dict(summary), profile, numeric_cols, date_cols, text_cols, []),
+                            daemon=True,
+                        ).start()
+                        summary['llmStatus'] = 'Background enrichment in progress'
+                    else:
+                        summary = enrich_summary_with_local_llm(table_ref['label'], summary, profile, numeric_cols, date_cols, text_cols, [])
+                        summary['insightEngine'] = 'ai' if summary.get('llmStatus', '').startswith('Generated locally') else 'smart'
                 summary = attach_analysis_scope(summary, profile, numeric_cols, date_cols, text_cols, [], use_ai_insights)
                 return jsonify({
                     'tableName': table_ref['label'],
@@ -888,8 +904,22 @@ def get_executive_summary() -> Any:
             exec_summary = apply_insight_mode(exec_summary, insight_mode, profile, numeric_cols, date_cols, text_cols, analyses)
             exec_summary['insightEngine'] = 'smart'
             if use_ai_insights and use_local_llm_flag is not False:
-                exec_summary = enrich_summary_with_local_llm(table_ref['label'], exec_summary, profile, numeric_cols, date_cols, text_cols, analyses)
-                exec_summary['insightEngine'] = 'ai' if exec_summary.get('llmStatus', '').startswith('Generated locally') else 'smart'
+                if getattr(Config, 'LOCAL_LLM_BACKGROUND_ENRICH', False):
+                    def _bg_enrich_exec(label, s, p, n, d, t, a):
+                        try:
+                            enrich_summary_with_local_llm(label, s, p, n, d, t, a)
+                        except Exception:
+                            logging.getLogger(__name__).exception('Background LLM enrichment failed')
+
+                    threading.Thread(
+                        target=_bg_enrich_exec,
+                        args=(table_ref['label'], dict(exec_summary), profile, numeric_cols, date_cols, text_cols, analyses),
+                        daemon=True,
+                    ).start()
+                    exec_summary['llmStatus'] = 'Background enrichment in progress'
+                else:
+                    exec_summary = enrich_summary_with_local_llm(table_ref['label'], exec_summary, profile, numeric_cols, date_cols, text_cols, analyses)
+                    exec_summary['insightEngine'] = 'ai' if exec_summary.get('llmStatus', '').startswith('Generated locally') else 'smart'
                 analyses = apply_local_llm_column_insights(analyses, exec_summary)
                 analyses = apply_local_llm_anomaly_insights(analyses, exec_summary)
             exec_summary = attach_analysis_scope(exec_summary, profile, numeric_cols, date_cols, text_cols, analyses, use_ai_insights)
