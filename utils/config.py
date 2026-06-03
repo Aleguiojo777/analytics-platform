@@ -93,12 +93,16 @@ class Config:
     ENABLE_TREND_ANALYSIS = get_env_bool('ENABLE_TREND_ANALYSIS', True)
     ENABLE_CLEANED_MODE = get_env_bool('ENABLE_CLEANED_MODE', True)
     ENABLE_DATA_EXPORT = get_env_bool('ENABLE_DATA_EXPORT', True)
-    ENABLE_LOCAL_LLM = get_env_bool('ENABLE_LOCAL_LLM', False)
+    # Enable local LLM by default for users running Ollama locally
+    ENABLE_LOCAL_LLM = get_env_bool('ENABLE_LOCAL_LLM', True)
 
     # Local LLM (Ollama-compatible) Configuration
-    LOCAL_LLM_URL = get_env('LOCAL_LLM_URL', 'http://127.0.0.1:11434/api/chat')
-    LOCAL_LLM_MODEL = get_env('LOCAL_LLM_MODEL', 'llama3.2:3b')
-    LOCAL_LLM_TIMEOUT = get_env_int('LOCAL_LLM_TIMEOUT', 45)
+    # Ollama HTTP endpoint - prefer `/api/generate` which some Ollama versions use
+    LOCAL_LLM_URL = get_env('LOCAL_LLM_URL', 'http://127.0.0.1:11434/api/generate')
+    # Use the locally-available LLaMA 3.2.1 small model by default when present
+    LOCAL_LLM_MODEL = get_env('LOCAL_LLM_MODEL', 'llama3.2.1b')
+    # Increase default timeout to accommodate model cold starts
+    LOCAL_LLM_TIMEOUT = get_env_int('LOCAL_LLM_TIMEOUT', 120)
     # Local LLM resilience and behavior
     LOCAL_LLM_MAX_RETRIES = get_env_int('LOCAL_LLM_MAX_RETRIES', 2)
     LOCAL_LLM_RETRY_BACKOFF_SEC = int(get_env('LOCAL_LLM_RETRY_BACKOFF_SEC', '1'))

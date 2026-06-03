@@ -1,3 +1,105 @@
+import json
+import os
+import shlex
+import subprocess
+from typing import Any, Dict, Optional
+
+try:
+    import requests
+except Exception:  # pragma: no cover - optional dependency
+    requests = None
+
+
+def _call_ollama_http(prompt: str, model: str, timeout: int = 30) -> Optional[str]:
+    if not requests:
+        return None
+    url = "http://localhost:11434/api/generate"
+    payload = {"model": model, "prompt": prompt}
+    try:
+        r = requests.post(url, json=payload, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+        # Ollama HTTP response shapes vary; try common fields
+        if isinstance(data, dict):
+            return data.get("text") or data.get("output") or json.dumps(data)
+        return str(data)
+    except Exception:
+        return None
+
+
+def _call_ollama_cli(prompt: str, model: str, timeout: int = 30) -> Optional[str]:
+    cmd = ["ollama", "run", model, "--completion", "--input", prompt]
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if p.returncode == 0 and p.stdout:
+            return p.stdout.strip()
+        # sometimes output is on stderr
+        if p.stderr:
+            return p.stderr.strip()
+    except Exception:
+        return None
+    return None
+
+
+def _call_openai(prompt: str, model: str, timeout: int = 30) -> Optional[str]:
+    try:
+        import openai
+    except Exception:
+        return None
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        return None
+    openai.api_key = key
+    try:
+        # use ChatCompletion if available
+        if hasattr(openai, "ChatCompletion"):
+            resp = openai.ChatCompletion.create(model=model, messages=[{"role": "user", "content": prompt}], request_timeout=timeout)
+            return resp.choices[0].message.content.strip()
+        resp = openai.Completion.create(model=model, prompt=prompt, max_tokens=512, temperature=0.2, request_timeout=timeout)
+        return resp.choices[0].text.strip()
+    except Exception:
+        return None
+
+
+def generate(prompt: str, model: str = "phi3:mini", timeout: int = 30) -> Dict[str, Any]:
+    """Generate text from local model or fallback to available providers.
+
+    Strategy: try Ollama HTTP -> Ollama CLI -> OpenAI (if API key present).
+    """
+    result = {
+        "provider": None,
+        "text": None,
+        "error": None,
+    }
+
+    text = _call_ollama_http(prompt, model, timeout)
+    if text:
+        result.update({"provider": "ollama-http", "text": text})
+        return result
+
+    text = _call_ollama_cli(prompt, model, timeout)
+    if text:
+        result.update({"provider": "ollama-cli", "text": text})
+        return result
+
+    text = _call_openai(prompt, model, timeout)
+    if text:
+        result.update({"provider": "openai", "text": text})
+        return result
+
+    result["error"] = (
+        "No provider produced output. Ensure Ollama is running or set OPENAI_API_KEY."
+    )
+    return result
+
+
+def list_local_models() -> Dict[str, Any]:
+    """Return parsed `ollama list` output when available."""
+    try:
+        p = subprocess.run(["ollama", "list"], capture_output=True, text=True, timeout=10)
+        return {"returncode": p.returncode, "output": p.stdout.strip() or p.stderr.strip()}
+    except Exception as e:
+        return {"returncode": 1, "output": str(e)}
 """Optional local LLM integration for Insight Engine.
 
 The provider is intentionally best-effort: DataLens must keep working when
@@ -279,8 +381,33 @@ def ask_ollama(prompt: str) -> str:
         method='POST',
     )
     with urllib.request.urlopen(request, timeout=Config.LOCAL_LLM_TIMEOUT) as response:
-        data = json.loads(response.read().decode('utf-8'))
-    return str((data.get('message') or {}).get('content') or '').strip()
+        raw = response.read().decode('utf-8')
+        try:
+            data = json.loads(raw)
+        except Exception:
+            # If response is not JSON, return raw text
+            return raw.strip()
+
+    # Ollama HTTP responses can take several shapes depending on version:
+    # - {"message": {"content": "..."}}
+    # - {"text": "..."}
+    # - {"output": "..."}
+    # - other dict shapes
+    if isinstance(data, dict):
+        # preferred: message.content
+        msg = data.get('message') or {}
+        if isinstance(msg, dict) and msg.get('content'):
+            return str(msg.get('content')).strip()
+        # fallback to text or output
+        for key in ('text', 'output'):
+            if key in data and data.get(key):
+                return str(data.get(key)).strip()
+        # some versions embed choices or 'result'
+        if data.get('result'):
+            return str(data.get('result')).strip()
+        # last resort: return the JSON string
+        return json.dumps(data)
+    return str(data)
 
 
 def _prompt_hash(prompt: str) -> str:
@@ -623,14 +750,21 @@ def _validate_anomaly_llm_output(parsed: Dict[str, Any]) -> bool:
 def ask_ollama_for_insight_json(prompt: str) -> Dict[str, Any]:
     """Ask Ollama for JSON and give it one chance to repair malformed output."""
     first_response = ask_ollama_with_resilience(prompt)
+    logger.info('Raw LLM first response: %s', first_response)
     try:
         parsed = parse_llm_json(first_response)
         if not _validate_llm_output(parsed):
+            # Try to coerce common alternate shapes into the expected schema
+            coerced = _coerce_insight_shape(parsed)
+            if coerced and _validate_llm_output(coerced):
+                logger.info('Coerced LLM first response into expected schema')
+                return coerced
             _inc_metric('validation_failures')
             raise ValueError('LLM output failed schema validation')
         return parsed
     except (ValueError, json.JSONDecodeError) as first_error:
         _inc_metric('errors')
+        logger.info('LLM first parse/validation error: %s', first_error)
         repair_prompt = (
             'The previous response was not valid JSON. Return the same analytics content as valid JSON only. '
             'Use this exact object shape: {"narrativeText":"...","keyObservations":["..."],'
@@ -639,11 +773,64 @@ def ask_ollama_for_insight_json(prompt: str) -> Dict[str, Any]:
             f'Invalid response to repair:\n{first_response}\n\nParser error: {first_error}'
         )
         repaired = ask_ollama_with_resilience(repair_prompt)
+        logger.info('Raw LLM repaired response: %s', repaired)
         parsed2 = parse_llm_json(repaired)
         if not _validate_llm_output(parsed2):
+            coerced2 = _coerce_insight_shape(parsed2)
+            if coerced2 and _validate_llm_output(coerced2):
+                logger.info('Coerced repaired LLM response into expected schema')
+                return coerced2
             _inc_metric('validation_failures')
+            logger.info('Repaired LLM output failed validation')
             raise ValueError('Repaired LLM output failed schema validation')
         return parsed2
+
+
+def _coerce_insight_shape(parsed: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Attempt to map common alternate LLM response shapes into the required schema.
+
+    This is a best-effort heuristic to handle responses like {"summary": {...}}
+    where keys are "whatMattersMost", "risksToCheck", "nextActions".
+    """
+    if not isinstance(parsed, dict):
+        return None
+    # Common alternate: {"summary": {"whatMattersMost": ..., "risksToCheck": [...], "nextActions": [...]}}
+    summary = parsed.get('summary') or parsed.get('Summary')
+    if isinstance(summary, dict):
+        out = {
+            'narrativeText': None,
+            'keyObservations': [],
+            'recommendations': [],
+            'reportSections': [],
+            'columnInsights': [],
+            'anomalyInsights': []
+        }
+        if summary.get('whatMattersMost'):
+            out['narrativeText'] = str(summary.get('whatMattersMost'))
+        # risksToCheck -> keyObservations
+        if isinstance(summary.get('risksToCheck'), list):
+            out['keyObservations'] = [str(x) for x in summary.get('risksToCheck')[:6]]
+        # nextActions -> recommendations
+        if isinstance(summary.get('nextActions'), list):
+            out['recommendations'] = [str(x) for x in summary.get('nextActions')[:8]]
+        # also try to construct reportSections
+        sections = []
+        if out['keyObservations']:
+            sections.append({'title': 'Risks To Check', 'items': out['keyObservations']})
+        if out['recommendations']:
+            sections.append({'title': 'Next Actions', 'items': out['recommendations']})
+        if sections:
+            out['reportSections'] = sections
+        # narrativeText must be a string; if missing, compose from what's available
+        if not out['narrativeText']:
+            parts = []
+            if out['keyObservations']:
+                parts.append('Key observations: ' + '; '.join(out['keyObservations'][:3]))
+            if out['recommendations']:
+                parts.append('Recommendations: ' + '; '.join(out['recommendations'][:3]))
+            out['narrativeText'] = '\n\n'.join(parts)[:1600]
+        return out
+    return None
 
 
 def _compact_anomaly_tasks(analyses: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

@@ -1,0 +1,443 @@
+﻿{
+    "analyzedColumns":  2,
+    "columnCount":  6,
+    "criticalAnomalies":  [
+                              {
+                                  "column":  "Quantity",
+                                  "count":  1
+                              },
+                              {
+                                  "column":  "TotalAmount",
+                                  "count":  1
+                              }
+                          ],
+    "detailedAnalysis":  [
+                             {
+                                 "anomalies":  [
+                                                   {
+                                                       "deviationPercent":  267.0,
+                                                       "expectedRange":  "0.51 to 10.39",
+                                                       "index":  17,
+                                                       "severity":  "moderate",
+                                                       "type":  "high",
+                                                       "value":  20.0,
+                                                       "zScore":  2.94
+                                                   }
+                                               ],
+                                 "anomaliesDetailed":  [
+                                                           {
+                                                               "actualValue":  20.0,
+                                                               "businessQuestions":  [
+
+                                                                                     ],
+                                                               "context":  {
+                                                                               "localDirection":  "upward",
+                                                                               "nextValue":  3.0,
+                                                                               "previousValue":  1.0,
+                                                                               "windowEndRow":  20,
+                                                                               "windowStartRow":  16
+                                                                           },
+                                                               "decisionGuide":  [
+
+                                                                                 ],
+                                                               "deviation":  "267.0% from average",
+                                                               "expectedRange":  "0.51 to 10.39",
+                                                               "fixSteps":  [
+
+                                                                            ],
+                                                               "impact":  "The quantity has increased by more than 2 standard deviations from the average.",
+                                                               "likelyCauses":  [
+                                                                                    "An increase in sales volume may have led to a surge in demand for products, causing an upward trend in Quantity.",
+                                                                                    "A new product launch or promotion could be contributing to the increase."
+                                                                                ],
+                                                               "llmInsights":  true,
+                                                               "metricContext":  "numeric metric",
+                                                               "recommendations":  [
+
+                                                                                   ],
+                                                               "rowIndex":  17,
+                                                               "severity":  "moderate",
+                                                               "surroundingAverage":  6.2,
+                                                               "type":  "high",
+                                                               "validationChecks":  [
+                                                                                        "The deviation from the average is significant considering the expected range.",
+                                                                                        "The z-score indicates a moderate level of anomaly."
+                                                                                    ],
+                                                               "zScore":  2.94
+                                                           }
+                                                       ],
+                                 "column":  "Quantity",
+                                 "insights":  [
+                                                  "Quantity: variation 348.6% across 20 analyzed values.",
+                                                  "Quantity: 1 anomaly value(s), 5.0% of analyzed values.",
+                                                  "Quantity: trend upward with weak strength and 4.2% confidence."
+                                              ],
+                                 "stats":  {
+                                               "avg":  5.45,
+                                               "count":  20,
+                                               "max":  20.0,
+                                               "median":  3.5,
+                                               "min":  1.0,
+                                               "stdDev":  4.94
+                                           },
+                                 "trend":  {
+                                               "confidence":  4.2,
+                                               "prediction":  7.289473684210526,
+                                               "slope":  0.1752,
+                                               "strength":  "weak",
+                                               "trend":  "upward"
+                                           },
+                                 "trendBasis":  "SaleDate"
+                             },
+                             {
+                                 "anomalies":  [
+                                                   {
+                                                       "deviationPercent":  458.1,
+                                                       "expectedRange":  "-8032.27 to 56412.27",
+                                                       "index":  13,
+                                                       "severity":  "high",
+                                                       "type":  "high",
+                                                       "value":  135000.0,
+                                                       "zScore":  3.44
+                                                   }
+                                               ],
+                                 "anomaliesDetailed":  [
+                                                           {
+                                                               "actualValue":  135000.0,
+                                                               "businessQuestions":  [
+
+                                                                                     ],
+                                                               "context":  {
+                                                                               "localDirection":  "upward",
+                                                                               "nextValue":  12000.0,
+                                                                               "previousValue":  7500.0,
+                                                                               "windowEndRow":  16,
+                                                                               "windowStartRow":  12
+                                                                           },
+                                                               "decisionGuide":  [
+
+                                                                                 ],
+                                                               "deviation":  "458.1% from average",
+                                                               "expectedRange":  "-8032.27 to 56412.27",
+                                                               "fixSteps":  [
+
+                                                                            ],
+                                                               "impact":  "The total amount has increased by more than 4 standard deviations from the average.",
+                                                               "likelyCauses":  [
+                                                                                    "An increase in sales revenue may have led to a surge in demand for products, causing an upward trend in TotalAmount.",
+                                                                                    "A new customer acquisition or upselling could be contributing to the increase."
+                                                                                ],
+                                                               "llmInsights":  true,
+                                                               "metricContext":  "numeric metric",
+                                                               "recommendations":  [
+
+                                                                                   ],
+                                                               "rowIndex":  13,
+                                                               "severity":  "high",
+                                                               "surroundingAverage":  38500.0,
+                                                               "type":  "high",
+                                                               "validationChecks":  [
+                                                                                        "The deviation from the average is extreme considering the expected range.",
+                                                                                        "The z-score indicates a high level of anomaly."
+                                                                                    ],
+                                                               "zScore":  3.44
+                                                           }
+                                                       ],
+                                 "column":  "TotalAmount",
+                                 "insights":  [
+                                                  "TotalAmount: variation 541.5% across 20 analyzed values.",
+                                                  "TotalAmount: 1 anomaly value(s), 5.0% of analyzed values.",
+                                                  "TotalAmount: trend downward with weak strength and 0.0% confidence."
+                                              ],
+                                 "stats":  {
+                                               "avg":  24190.0,
+                                               "count":  20,
+                                               "max":  135000.0,
+                                               "median":  12000.0,
+                                               "min":  4000.0,
+                                               "stdDev":  32222.27
+                                           },
+                                 "trend":  {
+                                               "confidence":  0.0,
+                                               "prediction":  23286.84210526316,
+                                               "slope":  -86.015,
+                                               "strength":  "weak",
+                                               "trend":  "downward"
+                                           },
+                                 "trendBasis":  "SaleDate"
+                             }
+                         ],
+    "keyMetrics":  [
+                       {
+                           "column":  "TotalAmount",
+                           "range":  "4000.0 to 135000.0",
+                           "value":  24190.0,
+                           "variation":  "541.5%"
+                       },
+                       {
+                           "column":  "Quantity",
+                           "range":  "1.0 to 20.0",
+                           "value":  5.45,
+                           "variation":  "348.6%"
+                       }
+                   ],
+    "profile":  {
+                    "columnCount":  6,
+                    "dateColumnCount":  1,
+                    "healthLabel":  "Good",
+                    "healthReasons":  [
+                                          "No text dimension for category breakdowns"
+                                      ],
+                    "numericMeasureCount":  2,
+                    "reason":  "No text dimension for category breakdowns",
+                    "recommendedAction":  "Choose this table for dashboard and Smart Insights.",
+                    "rowCount":  20,
+                    "score":  80,
+                    "strengths":  [
+                                      "20 row(s) available",
+                                      "6 column(s) detected",
+                                      "2 numeric measure(s)",
+                                      "1 date/time field(s)"
+                                  ],
+                    "suggestedView":  "time-series",
+                    "textDimensionCount":  0,
+                    "usable":  true
+                },
+    "recommendations":  [
+
+                        ],
+    "summary":  {
+                    "analysisScope":  {
+                                          "aiRequested":  true,
+                                          "analyzedColumnNames":  [
+                                                                      "Quantity",
+                                                                      "TotalAmount"
+                                                                  ],
+                                          "analyzedColumns":  2,
+                                          "columns":  6,
+                                          "dateColumns":  1,
+                                          "numericColumns":  2,
+                                          "rows":  20,
+                                          "textColumns":  0
+                                      },
+                    "anomalyDetails":  [
+                                           {
+                                               "actualValue":  20.0,
+                                               "businessQuestions":  [
+
+                                                                     ],
+                                               "column":  "Quantity",
+                                               "context":  {
+                                                               "localDirection":  "upward",
+                                                               "nextValue":  3.0,
+                                                               "previousValue":  1.0,
+                                                               "windowEndRow":  20,
+                                                               "windowStartRow":  16
+                                                           },
+                                               "decisionGuide":  [
+
+                                                                 ],
+                                               "deviation":  "267.0% from average",
+                                               "expectedRange":  "0.51 to 10.39",
+                                               "fixSteps":  [
+
+                                                            ],
+                                               "impact":  "Quantity value 20.0 is 267.0% from the average and outside expected range 0.51 to 10.39.",
+                                               "likelyCauses":  [
+
+                                                                ],
+                                               "metricContext":  "numeric metric",
+                                               "recommendations":  [
+
+                                                                   ],
+                                               "rowIndex":  17,
+                                               "severity":  "moderate",
+                                               "surroundingAverage":  6.2,
+                                               "type":  "high",
+                                               "validationChecks":  [
+
+                                                                    ],
+                                               "zScore":  2.94
+                                           },
+                                           {
+                                               "actualValue":  135000.0,
+                                               "businessQuestions":  [
+
+                                                                     ],
+                                               "column":  "TotalAmount",
+                                               "context":  {
+                                                               "localDirection":  "upward",
+                                                               "nextValue":  12000.0,
+                                                               "previousValue":  7500.0,
+                                                               "windowEndRow":  16,
+                                                               "windowStartRow":  12
+                                                           },
+                                               "decisionGuide":  [
+
+                                                                 ],
+                                               "deviation":  "458.1% from average",
+                                               "expectedRange":  "-8032.27 to 56412.27",
+                                               "fixSteps":  [
+
+                                                            ],
+                                               "impact":  "TotalAmount value 135000.0 is 458.1% from the average and outside expected range -8032.27 to 56412.27.",
+                                               "likelyCauses":  [
+
+                                                                ],
+                                               "metricContext":  "numeric metric",
+                                               "recommendations":  [
+
+                                                                   ],
+                                               "rowIndex":  13,
+                                               "severity":  "high",
+                                               "surroundingAverage":  38500.0,
+                                               "type":  "high",
+                                               "validationChecks":  [
+
+                                                                    ],
+                                               "zScore":  3.44
+                                           }
+                                       ],
+                    "criticalAnomalies":  [
+                                              {
+                                                  "column":  "Quantity",
+                                                  "count":  1
+                                              },
+                                              {
+                                                  "column":  "TotalAmount",
+                                                  "count":  1
+                                              }
+                                          ],
+                    "dataQualityScore":  95.0,
+                    "insightEngine":  "ai",
+                    "keyMetrics":  [
+                                       {
+                                           "column":  "TotalAmount",
+                                           "range":  "4000.0 to 135000.0",
+                                           "value":  24190.0,
+                                           "variation":  "541.5%"
+                                       },
+                                       {
+                                           "column":  "Quantity",
+                                           "range":  "1.0 to 20.0",
+                                           "value":  5.45,
+                                           "variation":  "348.6%"
+                                       }
+                                   ],
+                    "keyObservations":  [
+                                            "TotalAmount: range 4000.0 to 135000.0, variation 541.5%.",
+                                            "Anomaly count: 2 of 40 analyzed numeric values (5.0%).",
+                                            "Trend columns: Quantity (upward), TotalAmount (downward)."
+                                        ],
+                    "llmAnomalyInsights":  [
+                                               {
+                                                   "businessQuestions":  [
+
+                                                                         ],
+                                                   "column":  "Quantity",
+                                                   "decisionGuide":  [
+
+                                                                     ],
+                                                   "fixSteps":  [
+
+                                                                ],
+                                                   "impact":  "The quantity has increased by more than 2 standard deviations from the average.",
+                                                   "likelyCauses":  [
+                                                                        "An increase in sales volume may have led to a surge in demand for products, causing an upward trend in Quantity.",
+                                                                        "A new product launch or promotion could be contributing to the increase."
+                                                                    ],
+                                                   "rowIndex":  17,
+                                                   "validationChecks":  [
+                                                                            "The deviation from the average is significant considering the expected range.",
+                                                                            "The z-score indicates a moderate level of anomaly."
+                                                                        ]
+                                               },
+                                               {
+                                                   "businessQuestions":  [
+
+                                                                         ],
+                                                   "column":  "TotalAmount",
+                                                   "decisionGuide":  [
+
+                                                                     ],
+                                                   "fixSteps":  [
+
+                                                                ],
+                                                   "impact":  "The total amount has increased by more than 4 standard deviations from the average.",
+                                                   "likelyCauses":  [
+                                                                        "An increase in sales revenue may have led to a surge in demand for products, causing an upward trend in TotalAmount.",
+                                                                        "A new customer acquisition or upselling could be contributing to the increase."
+                                                                    ],
+                                                   "rowIndex":  13,
+                                                   "validationChecks":  [
+                                                                            "The deviation from the average is extreme considering the expected range.",
+                                                                            "The z-score indicates a high level of anomaly."
+                                                                        ]
+                                               }
+                                           ],
+                    "llmNarrativeText":  "Identify top-performing products and customers.",
+                    "llmStatus":  "Generated locally with llama3.2:1b (metrics: {\u0027calls\u0027: 2, \u0027errors\u0027: 0, \u0027cache_hits\u0027: 0, \u0027validation_failures\u0027: 0})",
+                    "mode":  "executive",
+                    "modeLabel":  "Executive Summary",
+                    "narrativeText":  "Identify top-performing products and customers.",
+                    "recommendations":  [
+
+                                        ],
+                    "reportSections":  [
+                                           {
+                                               "items":  [
+                                                             "TotalAmount: range 4000.0 to 135000.0, variation 541.5%.",
+                                                             "Anomaly count: 2 of 40 analyzed numeric values (5.0%).",
+                                                             "Trend columns: Quantity (upward), TotalAmount (downward)."
+                                                         ],
+                                               "title":  "Computed Summary"
+                                           },
+                                           {
+                                               "items":  [
+                                                             "TotalAmount: average 24190.0, range 4000.0 to 135000.0, variation 541.5%",
+                                                             "Quantity: average 5.45, range 1.0 to 20.0, variation 348.6%"
+                                                         ],
+                                               "title":  "Key Metrics"
+                                           }
+                                       ],
+                    "trends":  [
+                                   {
+                                       "column":  "Quantity",
+                                       "confidence":  "4.2%",
+                                       "direction":  "upward",
+                                       "predictedNextValue":  7.29,
+                                       "strength":  "weak"
+                                   },
+                                   {
+                                       "column":  "TotalAmount",
+                                       "confidence":  "0.0%",
+                                       "direction":  "downward",
+                                       "predictedNextValue":  23286.84,
+                                       "strength":  "weak"
+                                   }
+                               ]
+                },
+    "tableName":  "dbo.Sales",
+    "tableRef":  {
+                     "label":  "dbo.Sales",
+                     "name":  "Sales",
+                     "schema":  "dbo"
+                 },
+    "trends":  [
+                   {
+                       "column":  "Quantity",
+                       "confidence":  "4.2%",
+                       "direction":  "upward",
+                       "predictedNextValue":  7.29,
+                       "strength":  "weak"
+                   },
+                   {
+                       "column":  "TotalAmount",
+                       "confidence":  "0.0%",
+                       "direction":  "downward",
+                       "predictedNextValue":  23286.84,
+                       "strength":  "weak"
+                   }
+               ]
+}
+
